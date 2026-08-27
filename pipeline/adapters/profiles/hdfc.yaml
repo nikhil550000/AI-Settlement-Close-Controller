@@ -1,0 +1,15 @@
+# FR-08 HDFC-shape column map (spec.md §2.6).
+# Header text, order, and date format transcribed from the spec's own
+# column list: Date, Narration, Chq./Ref.No., Value Dt, Withdrawal Amt.,
+# Deposit Amt., Closing Balance. `DD/MM/YY` is one of the two date
+# formats FR-08 names explicitly.
+bank_profile: hdfc
+date_format: "%d/%m/%y"
+header: ["Date", "Narration", "Chq./Ref.No.", "Value Dt", "Withdrawal Amt.", "Deposit Amt.", "Closing Balance"]
+value_date_column: "Value Dt"
+transaction_date_column: "Date"
+narration_column: "Narration"
+ref_no_column: "Chq./Ref.No."
+withdrawal_column: "Withdrawal Amt."
+deposit_column: "Deposit Amt."
+balance_column: "Closing Balance"

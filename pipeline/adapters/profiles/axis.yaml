@@ -1,0 +1,17 @@
+# FR-08 Axis-shape column map (spec.md §2.6).
+# Tran Date, Chq No, Particulars, Debit, Credit, Balance, Init.Br — a
+# single date column (no separate value date), debit/credit naming
+# instead of withdrawal/deposit. Reuses the `DD-MM-YYYY` format already
+# required for ICICI rather than inventing a third variant FR-08 does not
+# name. `Init.Br` (initiating branch) has no canonical counterpart and is
+# left unmapped, same as ICICI's serial-number column.
+bank_profile: axis
+date_format: "%d-%m-%Y"
+header: ["Tran Date", "Chq No", "Particulars", "Debit", "Credit", "Balance", "Init.Br"]
+value_date_column: "Tran Date"
+transaction_date_column: null
+narration_column: "Particulars"
+ref_no_column: "Chq No"
+withdrawal_column: "Debit"
+deposit_column: "Credit"
+balance_column: "Balance"
