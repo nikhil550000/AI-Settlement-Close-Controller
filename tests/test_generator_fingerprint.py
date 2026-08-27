@@ -48,6 +48,7 @@ from generator.narration import (
     UtrShape,
     narration_template,
 )
+from pipeline.accounts import ACCOUNT_RAZORPAY_CLEARING, ACCOUNT_SALES_RETURNS_AND_ALLOWANCES
 from pipeline.fingerprint import scenario_block_statistic
 from pipeline.schemas import RazorpayEntityType
 from tests.test_generator_batch import _EXPECTED_STATE_TOTALS
@@ -457,9 +458,13 @@ def test_the_global_id_pass_keeps_every_cross_reference_resolvable(batch):
         r.dispute_id for r in batch.recon_lines if r.dispute_id
     }
     known = settlement_ids | entity_ids | journal_ids | line_ids | owned_ids
-    # §3.3's `AMBIGUOUS_CASE` cites the reference that resolves to nothing —
-    # that is the case, and it must still be a post-pass identifier.
+    # Every `ledger_entry.reference` in the batch resolves to a recon line as of
+    # session 4.1 — §3.3's `AMBIGUOUS_CASE` pair included, which is what makes it
+    # attributable to its case. Kept as a named (now empty) set so that a
+    # regression reintroducing a dangling reference fails the loop below rather
+    # than being silently tolerated.
     dangling = {e.reference for e in batch.ledger_entries if e.reference not in entity_ids}
+    assert dangling == set(), f"ledger references resolving to no recon line: {sorted(dangling)}"
 
     for line in batch.recon_lines:
         assert line.settlement_id in settlement_ids
@@ -478,19 +483,53 @@ def test_the_global_id_pass_keeps_every_cross_reference_resolvable(batch):
                 )
 
 
-def test_the_ambiguous_cases_dangling_references_survive_the_id_pass(batch):
-    """§3.3's `AMBIGUOUS_CASE`: a ledger entry whose `reference` resolves to nothing must still resolve to nothing."""
-    entity_ids = {line.entity_id for line in batch.recon_lines}
-    dangling = defaultdict(list)
-    for entry in batch.ledger_entries:
-        if entry.reference not in entity_ids:
-            dangling[entry.reference].append(entry)
+def test_the_ambiguous_cases_phantom_pairs_survive_the_id_pass(batch):
+    """§3.3's `AMBIGUOUS_CASE`: the contra-revenue pair stays uncorroborated *and* attributable.
 
-    assert len(dangling) == N_AMBIGUOUS
-    for reference, entries in dangling.items():
-        assert len(entries) == 2  # the internally-balanced pair the construction posts
-        assert sum(e.debit for e in entries) == sum(e.credit for e in entries)
-        assert {batch.population_of[e.journal_entry_id] for e in entries} == {"ambiguous"}
+    Session 2.2 achieved the first half by pointing the pair's `reference`
+    at an id that existed nowhere, which also detached it from its own
+    case; session 4.1 repointed it at a real payment in the same
+    settlement. Both properties are pinned here, after the global ID pass,
+    because the pass rewrites every identifier in the batch and either one
+    could be lost in it.
+    """
+    contra_legs = [
+        entry
+        for entry in batch.ledger_entries
+        if entry.account_code == ACCOUNT_SALES_RETURNS_AND_ALLOWANCES.code
+    ]
+    assert len(contra_legs) == N_AMBIGUOUS, "only the ambiguous population posts contra-revenue"
+
+    payments_by_settlement = defaultdict(set)
+    for line in batch.recon_lines:
+        if line.type is RazorpayEntityType.PAYMENT:
+            payments_by_settlement[line.settlement_id].add(line.entity_id)
+    refund_parents = {line.payment_id for line in batch.recon_lines if line.type is RazorpayEntityType.REFUND}
+    entries_by_reference = defaultdict(list)
+    for entry in batch.ledger_entries:
+        entries_by_reference[entry.reference].append(entry)
+
+    for leg in contra_legs:
+        assert batch.population_of[leg.journal_entry_id] == "ambiguous"
+        # Attributable: the reference names a payment inside its own settlement.
+        case_id = next(
+            settlement_id
+            for settlement_id, payments in payments_by_settlement.items()
+            if leg.reference in payments
+        )
+        assert batch.population_of[case_id] == "ambiguous"
+        # Uncorroborated: no refund recon line anywhere backs that posting, so T-02 cannot fire.
+        assert leg.reference not in refund_parents
+        # Internally balanced against its own clearing leg. A clean payment
+        # *debits* clearing, so the one clearing *credit* on this reference is
+        # unambiguously the phantom pair's other half.
+        clearing_credits = [
+            entry
+            for entry in entries_by_reference[leg.reference]
+            if entry.account_code == ACCOUNT_RAZORPAY_CLEARING.code and entry.credit > 0
+        ]
+        assert len(clearing_credits) == 1
+        assert clearing_credits[0].credit == leg.debit
 
 
 # --- The pass changes nothing it should not. ---

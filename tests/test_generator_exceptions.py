@@ -36,6 +36,7 @@ from generator.exceptions import (
 from pipeline.timing import is_within_settlement_window
 from pipeline.ground_truth import DeclineReason, ExceptionClass, ExceptionSubtype, OutcomeState
 from pipeline.money import Paise
+from pipeline.schemas import RazorpayEntityType
 
 SNAPSHOT = date(2026, 8, 28)
 
@@ -208,13 +209,32 @@ def test_dispute_pending_flags_exactly_one_payment_per_case():
         assert gt.expected_journal_entries == ()
 
 
-def test_ambiguous_ledger_entry_references_no_real_recon_line():
+def test_ambiguous_ledger_entry_is_uncorroborated_but_attributable():
+    """The pair must be *unresolvable* (no refund recon line backs it) and *attributable*
+    (its `reference` names a real payment in its own settlement) at the same time.
+
+    Session 2.2 had only the first half: the reference resolved to nothing
+    anywhere in the batch, which also meant it belonged to no case, so
+    these nine `ABSTAINED` labels were unreachable from evidence. Both
+    halves are asserted here so neither can be lost again.
+    """
     batch = generate_ambiguous_batch(random.Random(1), SNAPSHOT)
     entity_ids = {line.entity_id for line in batch.recon_lines}
+    payments_by_settlement = {
+        settlement.id: {line.entity_id for line in batch.recon_lines if line.settlement_id == settlement.id}
+        for settlement in batch.settlements
+    }
+    assert not any(line.type is RazorpayEntityType.REFUND for line in batch.recon_lines)
+
     for gt in batch.ground_truth:
-        phantom_refs = {r for r in gt.expected_linked_source_records if r != gt.case_id}
-        for je_id in phantom_refs:
+        journal_entry_ids = {r for r in gt.expected_linked_source_records if r.startswith("je_")}
+        assert journal_entry_ids, "the phantom pair must be cited in the ground-truth record list"
+        for je_id in journal_entry_ids:
             entry = next(e for e in batch.ledger_entries if e.journal_entry_id == je_id)
-            assert entry.reference not in entity_ids
+            # Attributable: joins to its own case through the one ledger -> recon join.
+            assert entry.reference in entity_ids
+            assert entry.reference in payments_by_settlement[gt.case_id]
+        # Uncorroborated: no refund recon line exists for that payment, so T-02 cannot fire.
         assert gt.expected_outcome_state == OutcomeState.ABSTAINED
         assert gt.ground_truth_exception_class == ExceptionClass.AMBIGUOUS_CASE
+        assert gt.expected_template_ids == ()

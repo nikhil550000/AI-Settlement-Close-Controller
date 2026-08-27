@@ -33,6 +33,7 @@ from generator.bank_lines import add_settlement_credit
 from generator.batch import GeneratedBatch
 from generator.narration import PAYMENT_METHODS, ledger_narration, random_utr
 from generator.rounding import percentage_of_paise
+from pipeline import accounts
 from pipeline.ground_truth import ExceptionClass, ExceptionSubtype, GroundTruthCase, OutcomeState
 from pipeline.money import Paise
 from pipeline.schemas import (
@@ -62,11 +63,15 @@ PAYMENT_AMOUNT_MAX_RUPEES = 50_000
 FEE_PERCENT = Decimal("2")
 GST_ON_FEE_PERCENT = Decimal("18")
 
-ACCOUNT_BANK_ACCOUNT = ("1010", "Bank Account")
-ACCOUNT_RAZORPAY_CLEARING = ("1020", "Razorpay Clearing")
-ACCOUNT_SALES_REVENUE = ("4010", "Sales Revenue")
-ACCOUNT_PAYMENT_GATEWAY_CHARGES = ("5010", "Payment Gateway Charges")
-ACCOUNT_GST_ON_GATEWAY_CHARGES = ("5020", "GST on Gateway Charges")
+# §3.2's chart of accounts is defined once, pipeline-side
+# (`pipeline/accounts.py`), and re-exported here under the names session 1.3
+# introduced so that the side that writes a code and the side that grades it
+# cannot drift apart. Same reasoning as `pipeline/timing.py` (session 3.3).
+ACCOUNT_BANK_ACCOUNT = accounts.ACCOUNT_BANK_ACCOUNT
+ACCOUNT_RAZORPAY_CLEARING = accounts.ACCOUNT_RAZORPAY_CLEARING
+ACCOUNT_SALES_REVENUE = accounts.ACCOUNT_SALES_REVENUE
+ACCOUNT_PAYMENT_GATEWAY_CHARGES = accounts.ACCOUNT_PAYMENT_GATEWAY_CHARGES
+ACCOUNT_GST_ON_GATEWAY_CHARGES = accounts.ACCOUNT_GST_ON_GATEWAY_CHARGES
 
 _PAYMENT_METHODS = PAYMENT_METHODS  # moved to generator/narration.py, the one shared text pool (§3.5)
 

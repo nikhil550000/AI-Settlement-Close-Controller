@@ -52,6 +52,7 @@ from generator.clean import (
     settlement_created_timestamp,
 )
 from generator.narration import neutral_adjustment_description, random_utr
+from pipeline import accounts
 from pipeline.ground_truth import (
     ExceptionClass,
     ExceptionSubtype,
@@ -69,9 +70,10 @@ from pipeline.schemas import (
     SettlementStatus,
 )
 
-# §3.2's two accounts not already defined in generator/clean.py.
-ACCOUNT_SALES_RETURNS_AND_ALLOWANCES = ("4020", "Sales Returns and Allowances")
-ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS = ("4900", "Razorpay Settlement Adjustments")
+# §3.2's two accounts not already re-exported by generator/clean.py; the
+# definitions themselves live in `pipeline/accounts.py`.
+ACCOUNT_SALES_RETURNS_AND_ALLOWANCES = accounts.ACCOUNT_SALES_RETURNS_AND_ALLOWANCES
+ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS = accounts.ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS
 
 N_CASES_PER_FAMILY = 10  # §3.5 case-allocation table: every FR-04 family holds 10 cases.
 

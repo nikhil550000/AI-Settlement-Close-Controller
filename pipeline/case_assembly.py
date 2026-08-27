@@ -158,7 +158,7 @@ def assemble_orphan_cases(bank_lines: Sequence[BankLine]) -> list[Case]:
 
     charge_ids = {line.line_id for line in residual if _is_bank_charge(line)}
     debits = [line for line in residual if line.withdrawal_paise > 0 and line.line_id not in charge_ids]
-    reversal_candidates = [line for line in debits if _is_reversal_shaped(line)]
+    reversal_candidates = [line for line in debits if is_reversal_shaped(line)]
     # Any other debit (line.line_id not in charge_ids and not reversal-shaped) is
     # plain outbound noise: never a case, and it needs no further handling.
 
@@ -187,12 +187,26 @@ def _is_bank_charge(line: BankLine) -> bool:
     return line.withdrawal_paise > 0 and any(keyword in narration for keyword in _BANK_CHARGE_KEYWORDS)
 
 
-def _is_reversal_shaped(line: BankLine) -> bool:
+def is_reversal_shaped(line: BankLine) -> bool:
+    """Whether a withdrawal's narration names itself a reversal/return.
+
+    Public because `pipeline/predicates.py` asks the same question when it
+    evaluates §3.3's `REVERSAL_UNMATCHED` trigger. One definition, so the
+    component that decided this line becomes its own case and the
+    component that says why cannot disagree about what a reversal is.
+    """
     narration = line.narration.upper()
     return line.withdrawal_paise > 0 and any(keyword in narration for keyword in _REVERSAL_KEYWORDS)
 
 
-def _reference_tokens(narration: str) -> set[str]:
+def reference_tokens(narration: str) -> set[str]:
+    """The digit-bearing alphanumeric runs of length >= 8 in a narration (see `_REFERENCE_TOKEN_RE`).
+
+    Public for the same reason as `is_reversal_shaped`: §3.3's
+    `DUPLICATE_CREDIT` trigger ("same UTR credited twice") is a question
+    about shared reference tokens, and it must be the same notion of
+    "token" that paired the two lines into one case in the first place.
+    """
     return {token for token in _REFERENCE_TOKEN_RE.findall(narration.upper()) if any(c.isdigit() for c in token)}
 
 
@@ -220,14 +234,14 @@ def _find_self_matching_reversal_pairs(
     """A reversal whose narration shares a reference token with some credit's narration is a wash, not a case."""
     credit_by_token: dict[str, BankLine] = {}
     for line in credit_lines:
-        for token in _reference_tokens(line.narration):
+        for token in reference_tokens(line.narration):
             credit_by_token.setdefault(token, line)
 
     pairs: list[tuple[BankLine, BankLine]] = []
     excluded_ids: set[str] = set()
     for reversal in reversal_lines:
         match = next(
-            (credit_by_token[token] for token in _reference_tokens(reversal.narration) if token in credit_by_token),
+            (credit_by_token[token] for token in reference_tokens(reversal.narration) if token in credit_by_token),
             None,
         )
         if match is not None:

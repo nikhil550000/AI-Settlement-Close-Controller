@@ -447,11 +447,30 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
     """`AMBIGUOUS_CASE`, `ABSTAINED`.
 
     §3.3: "a required piece of evidence is absent." Concretely: an
-    otherwise-clean settlement plus one extra, internally-balanced ledger
-    entry pair whose `reference` names an `entity_id` that does not exist
-    anywhere in the batch's recon lines — nothing corroborates it, and
-    nothing refutes it either, so no template's evidence predicate can
-    fire and no single defensible treatment exists.
+    otherwise-clean settlement plus one extra, internally-balanced
+    contra-revenue ledger pair posted against one of the settlement's own
+    payments, for which **no `refund` recon line exists anywhere in the
+    batch**. The merchant's books say a refund was booked; Razorpay's
+    evidence says no refund happened. Several mutually exclusive readings
+    fit — an unreported refund, an erroneous posting, a manual adjustment
+    against the wrong payment — and no template's evidence predicate can
+    fire on it (`T-02` requires the refund recon line that is precisely
+    what is missing), so no single defensible treatment exists.
+
+    **The reference names a real payment in this settlement, deliberately.**
+    Session 2.2 pointed it at a freshly minted `rfnd_*` id that resolved to
+    nothing anywhere in the batch. That made the pair unresolvable, but it
+    also made it *unattributable*: `ledger_entry.reference ==
+    recon_line.entity_id` is the only join between the ledger and a case
+    (§3.1, and `pipeline/predicates.py`'s ledger index), so a reference
+    resolving to nothing belongs to no case at all — the nine cases carried
+    `ABSTAINED` ground truth that no component, deterministic or model,
+    could ever have reached from evidence. Found and fixed in session 4.1
+    with user sign-off, the same way session 3.2 handled `orphans.py`'s
+    noise-direction bug. Anchoring on a real payment keeps the evidence
+    genuinely insufficient while making it reachable, which is what §3.3
+    describes and what the metric surface needs in order to grade
+    abstention at all.
     """
     batch = FamilyBatch()
     for _ in range(n_cases):
@@ -459,7 +478,9 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
         recon_lines, ledger_entries = _clean_payments(rng, settlement_id, utr, settlement_created_at, _n_payments(rng))
         settlement = _finalize_settlement(settlement_id, utr, settlement_created_at, recon_lines)
 
-        phantom_ref = _hex_id(rng, "rfnd_")
+        phantom_ref = rng.choice(recon_lines).entity_id
+        # Drawn independently of that payment's own amount: an
+        # internally-inconsistent posting, not a plausible reversal of it.
         phantom_amount = _payment_amount_paise(rng)
         entry_date = datetime.fromtimestamp(settlement_created_at, tz=timezone.utc).date()
         # Shared pool, same as every other ledger entry (§3.5): the case's
@@ -507,10 +528,15 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
                 expected_outcome_state=OutcomeState.ABSTAINED,
                 ground_truth_exception_class=ExceptionClass.AMBIGUOUS_CASE,
                 ground_truth_exception_subtype=ExceptionSubtype.NONE,
-                expected_linked_source_records=(settlement.id, *(je.journal_entry_id for je in phantom_entries)),
+                expected_linked_source_records=(
+                    settlement.id,
+                    phantom_ref,
+                    *(je.journal_entry_id for je in phantom_entries),
+                ),
                 expected_resolution=(
-                    f"Ledger references {phantom_ref} with no corroborating recon-line evidence in the "
-                    f"batch for settlement {settlement.id} — insufficient evidence to determine treatment."
+                    f"Ledger books a refund against payment {phantom_ref} in settlement {settlement.id} "
+                    "with no corresponding refund recon line in the batch — insufficient evidence to "
+                    "determine treatment."
                 ),
                 expected_journal_entries=(),
                 expected_template_ids=(),
