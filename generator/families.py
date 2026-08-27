@@ -30,8 +30,9 @@ from __future__ import annotations
 import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
+from generator.bank_lines import settlement_credit_bank_line
 from generator.clean import (
     ACCOUNT_BANK_ACCOUNT,
     ACCOUNT_GST_ON_GATEWAY_CHARGES,
@@ -59,6 +60,7 @@ from pipeline.ground_truth import (
 )
 from pipeline.money import Paise
 from pipeline.schemas import (
+    BankLine,
     LedgerEntry,
     RazorpayEntityType,
     ReconLine,
@@ -78,13 +80,26 @@ class FamilyBatch:
     settlements: list[Settlement] = field(default_factory=list)
     recon_lines: list[ReconLine] = field(default_factory=list)
     ledger_entries: list[LedgerEntry] = field(default_factory=list)
+    bank_lines: list[BankLine] = field(default_factory=list)
     ground_truth: list[GroundTruthCase] = field(default_factory=list)
 
     def extend(self, other: "FamilyBatch") -> None:
         self.settlements.extend(other.settlements)
         self.recon_lines.extend(other.recon_lines)
         self.ledger_entries.extend(other.ledger_entries)
+        self.bank_lines.extend(other.bank_lines)
         self.ground_truth.extend(other.ground_truth)
+
+
+def _settlement_credit_line(rng: random.Random, settlement: Settlement) -> BankLine:
+    """A landed bank credit for `settlement`, per REV-17's "98 with-credit" membership.
+
+    Shared by every session-2.2/2.1 population except the 27 REV-17
+    no-credit cases (family 4 core, family-4 no-op, `BANK_CREDIT_OVERDUE`).
+    """
+    created_date = datetime.fromtimestamp(settlement.created_at, tz=timezone.utc).date()
+    credit_date = created_date + timedelta(days=rng.randint(0, 1))
+    return settlement_credit_bank_line(rng, value_date=credit_date, amount=settlement.amount, utr=settlement.utr)
 
 
 def _new_settlement_shell(rng: random.Random, snapshot_ts: int) -> tuple[str, str, int]:
@@ -231,6 +246,7 @@ def generate_family_1_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
+        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
         batch.ground_truth.append(gt)
     return batch
 
@@ -251,6 +267,7 @@ def generate_family_3_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
+        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
         batch.ground_truth.append(gt)
     return batch
 
@@ -260,8 +277,10 @@ def generate_family_4_batch(rng: random.Random, snapshot_date: date, n_cases: in
 
     `ACCOUNTING_CORRECTION`/`MISPOSTING`, `AUTO_CLOSED`, `T-04`. The
     precondition "no `bank_line` credit matching the settlement" (§3.2)
-    holds vacuously here: session 2.1 generates no `bank_line` records at
-    all, so T-04's evidence predicate is satisfied by construction.
+    is enforced explicitly: this is one of REV-17's 27 no-credit
+    populations (family 4 core, family-4 no-op, `BANK_CREDIT_OVERDUE`),
+    so `_settlement_credit_line` (session 2.2) is deliberately never
+    called here — every other settlement-anchored population does call it.
     """
     snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
@@ -388,12 +407,19 @@ def generate_family_2_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
+        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
         batch.ground_truth.append(gt)
     return batch
 
 
-def _build_adjustment_line(
-    rng: random.Random, settlement_id: str, utr: str, settlement_created_at: int, recon_lines: list[ReconLine]
+def build_adjustment_line(
+    rng: random.Random,
+    settlement_id: str,
+    utr: str,
+    settlement_created_at: int,
+    recon_lines: list[ReconLine],
+    *,
+    description: str | None = None,
 ) -> ReconLine:
     """§3.2 family 5: a Razorpay-side settlement adjustment, credit or debit, with no merchant-ledger entry.
 
@@ -407,6 +433,12 @@ def _build_adjustment_line(
     is `NonNegPaise` (session 1.2): every settlement amount is a magnitude,
     and Razorpay would not apply a settlement-side deduction larger than
     the settlement itself.
+
+    `description` is exposed (unused by family 5 itself, which leaves it
+    `None`) so session 2.2's FR-06 tax-position population — structurally
+    the identical "unposted adjustment" shape per spec.md §4.2's Slot-C
+    note ("a 194-O deduction has a signature in the adjustment line") —
+    can reuse this builder rather than duplicating its amount/cap logic.
     """
     is_credit = rng.random() < 0.5
     if is_credit:
@@ -439,7 +471,7 @@ def _build_adjustment_line(
         posted_at=None,
         credit_type="default",
         dispute_id=None,
-        description=None,
+        description=description,
         method=None,
     )
 
@@ -467,7 +499,7 @@ def generate_family_5_batch(rng: random.Random, snapshot_date: date, n_cases: in
         settlement, recon_lines, ledger_entries, gt = _generate_extra_line_case(
             rng,
             snapshot_ts,
-            build_extra_line=_build_adjustment_line,
+            build_extra_line=build_adjustment_line,
             exception_subtype=ExceptionSubtype.OMISSION,
             template_id_fn=lambda line: "T-05" if line.credit > 0 else "T-06",
             correction_legs_fn=_t05_t06_correction_legs,
@@ -476,6 +508,7 @@ def generate_family_5_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
+        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
         batch.ground_truth.append(gt)
     return batch
 

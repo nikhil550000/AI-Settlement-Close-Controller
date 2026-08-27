@@ -65,7 +65,7 @@ AI Settlement Close Controller/
 
 ## Current phase pointer
 
-**Phase 2, Session 2.1 complete** (of 19 implementation sessions across 7 phases — see spec.md §6.3). Session 2.1 built the five FR-04 family injections (10 cases each) on top of Phase 1's clean-case generator.
+**Phase 2, Session 2.2 complete** (of 19 implementation sessions across 7 phases — see spec.md §6.3). Session 2.2 built the remaining §3.5 settlement-anchored populations, the four §3.6 orphan populations, non-settlement noise, and `bank_line` generation — the full 150-case reference batch now generates (`uv run generate --seed 1`).
 
 Check `BUILDLOG.md`'s most recent entry's **Next** field for the actual current state before starting any session — this pointer is a coarse anchor, the **Next** field is the real handoff.
 

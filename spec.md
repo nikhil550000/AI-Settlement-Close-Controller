@@ -4,8 +4,8 @@
 **Build type:** Solo
 **Submission deadline:** September 5, 2026 — confirmed from the Buildathon page itself ("You have from today till 5 September"). **Internal ship target: September 3, 2026**, with Sept 4–5 held as contingency only. No work is planned into the contingency window.
 **Today:** August 27, 2026 — **7 days to internal ship target (Sept 3), 9 days to confirmed deadline (Sept 5)**
-**Spec version:** v0.6
-**Spec status:** Sections 1–6 locked. Sections 4 (architecture and tooling), 5 (evaluation methodology) and 6 (phase plan) written and locked in v0.5; §6.3 (session decomposition) and §6.4 (version control protocol) added in v0.6. Section 7 remains pending; §2.10 holds the non-goals list. Seven revisions to locked sections logged as REV-16 → REV-22. **Build starts Aug 28.**
+**Spec version:** v0.7
+**Spec status:** Sections 1–6 locked. Sections 4 (architecture and tooling), 5 (evaluation methodology) and 6 (phase plan) written and locked in v0.5; §6.3 (session decomposition) and §6.4 (version control protocol) added in v0.6; §2.2's ledger-entry and raw-record-total estimates corrected in v0.7 (REV-23). Section 7 remains pending; §2.10 holds the non-goals list. Eight revisions to locked sections logged as REV-16 → REV-23. **Build starts Aug 28.**
 
 ---
 
@@ -226,11 +226,11 @@ Rationale: the track brief specifies a synthetic batch, so synthetic data is the
 | Recon rows (payments, refunds, adjustments) | ~1,500 |
 | Settlements | 125 |
 | Bank statement lines | ~175 (~98 settlement credits + ~28 orphan-case lines + ~50 non-settlement noise: bank charges, unrelated NEFT, reversals) |
-| Ledger entries | ~3,540 |
-| **Raw records, total** | **~5,340** |
+| Ledger entries | ~5,800 *(corrected in REV-23)* |
+| **Raw records, total** | **~7,600** *(corrected in REV-23)* |
 | **Reconciliation cases** | **150** (125 settlement-anchored + 25 orphan) |
 
-*(Rescaled and corrected in REV-13. v0.3 specified 120 cases and ~3,500 raw records; the record counts were independently wrong even at 120, and the row label omitted `adjustment` rows, which are family 5's only evidence.)*
+*(Rescaled and corrected in REV-13. v0.3 specified 120 cases and ~3,500 raw records; the record counts were independently wrong even at 120, and the row label omitted `adjustment` rows, which are family 5's only evidence. Ledger-entry and raw-record-total figures further corrected in REV-23 — REV-13's own re-derivation undercounted legs per payment.)*
 
 **Settlement credits number ~98, not 125.** Twenty-seven settlement-anchored cases require by construction that *no* matching bank credit exists at the batch snapshot: the 10 family-4 cases (whose hard precondition in §3.2 is exactly this), the 12 family-4 no-ops (lag still inside the T+2 window), and the 5 `BANK_CREDIT_OVERDUE` cases. Generating a credit for those would destroy the population. The ~175 total is unchanged; only its decomposition was wrong, and the decomposition is the generator's contract. *(Corrected in REV-17.)*
 
@@ -1191,3 +1191,9 @@ Revisions to locked sections. Required by the convention in Section 0.
 **Change.** §6.4 is added: commit-per-checkpoint cadence tied to §6.3's session boundary, `phase-1` through `phase-7` tags as the recovery points the §2.0 cut order already assumes, a commit-message convention, a stage-and-propose rule for implementation sessions, the committed/gitignored/never-committed split, and a decision to make the repository public from Session 1.1.
 
 **Correction recorded.** In discussion preceding this revision, the generated reference dataset was proposed for `.gitignore` on the ground that NFR-01 makes it regenerable. That contradicts FR-12, which requires the seeded reference dataset checked in. FR-12 is correct on the merits: §2.7's rationale is a reviewer who never runs the code, and such a reviewer cannot regenerate anything. Regenerability is an argument for excluding the SQLite ledger, not the dataset. §6.4 follows FR-12; no change to FR-12.
+
+### REV-23 — ledger-entry count corrected to match §3.2's 4-leg posting *(v0.7, Aug 27, 2026 — revises locked §2.2 / FR-01)*
+
+**Issue.** REV-13 re-derived FR-01's ledger-entry estimate as ~3,540, stated as following from "the payments-per-settlement distribution." But §3.2's family-3 worked example fixes the correct clean posting at **four** ledger legs per payment — `Dr Razorpay Clearing, Dr Payment Gateway Charges, Dr GST on Gateway Charges / Cr Sales Revenue` — and that is the exact posting session 1.3's generator implements (verified balanced by session 1.3's and 2.1's tests) and session 2.2 extends unchanged to every remaining settlement-anchored population. At §3.5's stated ~11 payments per settlement across 125 settlements (≈1,375–1,450 payments), four legs per payment yields roughly 5,500–5,800 ledger entries, not ~3,540 — REV-13's re-derivation implicitly assumed under half that many legs per payment, which is not reconcilable with §3.2's locked posting. Session 2.2's actual generator run measured this directly: 1,449 payment-type recon lines produced 5,774 ledger entries, 3.98 legs/payment, confirming the four-leg rule and disconfirming REV-13's total. This was caught only now because no session before 2.2 generated the full 125-settlement population at once; sessions 1.3 and 2.1 each ran a subset (18 and 50 settlements respectively) and no checkpoint before 2.2 asserted the raw ledger-entry total.
+
+**Change.** §2.2's `Ledger entries` estimate is corrected from ~3,540 to **~5,800**, and `Raw records, total` from ~5,340 to **~7,600** (1,500 + 125 + 175 + 5,800, restated the same way REV-13 summed it). No other row changes. No case count, template, chart-of-accounts, or invariant is affected — this is a record-count estimate only, and no session checkpoint through 2.2 asserted the prior figure.
