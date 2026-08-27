@@ -29,10 +29,10 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 
-from generator.bank_lines import settlement_credit_bank_line
+from generator.bank_lines import add_settlement_credit
+from generator.batch import GeneratedBatch
 from generator.clean import (
     ACCOUNT_BANK_ACCOUNT,
     ACCOUNT_GST_ON_GATEWAY_CHARGES,
@@ -47,9 +47,11 @@ from generator.clean import (
     _generate_payment,
     _hex_id,
     _payment_amount_paise,
-    _snapshot_unix_ts,
     _truncated_lognormal_int,
+    random_settlement_date,
+    settlement_created_timestamp,
 )
+from generator.narration import neutral_adjustment_description, random_utr
 from pipeline.ground_truth import (
     ExceptionClass,
     ExceptionSubtype,
@@ -60,7 +62,6 @@ from pipeline.ground_truth import (
 )
 from pipeline.money import Paise
 from pipeline.schemas import (
-    BankLine,
     LedgerEntry,
     RazorpayEntityType,
     ReconLine,
@@ -75,38 +76,15 @@ ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS = ("4900", "Razorpay Settlement Adjustme
 N_CASES_PER_FAMILY = 10  # §3.5 case-allocation table: every FR-04 family holds 10 cases.
 
 
-@dataclass(frozen=True)
-class FamilyBatch:
-    settlements: list[Settlement] = field(default_factory=list)
-    recon_lines: list[ReconLine] = field(default_factory=list)
-    ledger_entries: list[LedgerEntry] = field(default_factory=list)
-    bank_lines: list[BankLine] = field(default_factory=list)
-    ground_truth: list[GroundTruthCase] = field(default_factory=list)
-
-    def extend(self, other: "FamilyBatch") -> None:
-        self.settlements.extend(other.settlements)
-        self.recon_lines.extend(other.recon_lines)
-        self.ledger_entries.extend(other.ledger_entries)
-        self.bank_lines.extend(other.bank_lines)
-        self.ground_truth.extend(other.ground_truth)
+FamilyBatch = GeneratedBatch  # one container for every population (generator/batch.py)
 
 
-def _settlement_credit_line(rng: random.Random, settlement: Settlement) -> BankLine:
-    """A landed bank credit for `settlement`, per REV-17's "98 with-credit" membership.
-
-    Shared by every session-2.2/2.1 population except the 27 REV-17
-    no-credit cases (family 4 core, family-4 no-op, `BANK_CREDIT_OVERDUE`).
-    """
-    created_date = datetime.fromtimestamp(settlement.created_at, tz=timezone.utc).date()
-    credit_date = created_date + timedelta(days=rng.randint(0, 1))
-    return settlement_credit_bank_line(rng, value_date=credit_date, amount=settlement.amount, utr=settlement.utr)
-
-
-def _new_settlement_shell(rng: random.Random, snapshot_ts: int) -> tuple[str, str, int]:
-    settlement_created_at = snapshot_ts - rng.randint(1 * 86_400, 10 * 86_400)
+def _new_settlement_shell(rng: random.Random, snapshot_date: date) -> tuple[str, str, int]:
+    """Identity, UTR and `created_at` for one settlement, drawn the same way for every population."""
+    created_at = settlement_created_timestamp(rng, random_settlement_date(rng, snapshot_date))
     settlement_id = _hex_id(rng, "setl_")
-    utr = _hex_id(rng, "UTR", n_bytes=6).upper()
-    return settlement_id, utr, settlement_created_at
+    utr = random_utr(rng)
+    return settlement_id, utr, created_at
 
 
 def _n_payments(rng: random.Random) -> int:
@@ -153,14 +131,14 @@ def _account_leg(account: tuple[str, str], debit: Paise, credit: Paise) -> Expec
 
 def _generate_misposted_case(
     rng: random.Random,
-    snapshot_ts: int,
+    snapshot_date: date,
     *,
     anomaly_posting: PostingVariant,
     exception_subtype: ExceptionSubtype,
     template_id: str,
     correction_legs_fn: Callable[[ReconLine, list[LedgerEntry]], tuple[ExpectedJournalLeg, ...]],
 ) -> tuple[Settlement, list[ReconLine], list[LedgerEntry], GroundTruthCase]:
-    settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+    settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
     n_payments = _n_payments(rng)
     anomaly_index = rng.randrange(n_payments)
 
@@ -232,12 +210,11 @@ def _t04_correction_legs(_recon_line: ReconLine, ledger_entries: list[LedgerEntr
 
 def generate_family_1_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_CASES_PER_FAMILY) -> FamilyBatch:
     """Family 1 — unposted MDR fee + GST on fee. `ACCOUNTING_CORRECTION`/`OMISSION`, `AUTO_CLOSED`, `T-01`."""
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
         settlement, recon_lines, ledger_entries, gt = _generate_misposted_case(
             rng,
-            snapshot_ts,
+            snapshot_date,
             anomaly_posting=PostingVariant.UNPOSTED_FEE_GROSS_CLEARING,
             exception_subtype=ExceptionSubtype.OMISSION,
             template_id="T-01",
@@ -246,19 +223,18 @@ def generate_family_1_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(gt)
     return batch
 
 
 def generate_family_3_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_CASES_PER_FAMILY) -> FamilyBatch:
     """Family 3 — gross-vs-net posting error. `ACCOUNTING_CORRECTION`/`MISPOSTING`, `AUTO_CLOSED`, `T-03`."""
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
         settlement, recon_lines, ledger_entries, gt = _generate_misposted_case(
             rng,
-            snapshot_ts,
+            snapshot_date,
             anomaly_posting=PostingVariant.NET_REVENUE,
             exception_subtype=ExceptionSubtype.MISPOSTING,
             template_id="T-03",
@@ -267,7 +243,7 @@ def generate_family_3_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(gt)
     return batch
 
@@ -279,15 +255,14 @@ def generate_family_4_batch(rng: random.Random, snapshot_date: date, n_cases: in
     precondition "no `bank_line` credit matching the settlement" (§3.2)
     is enforced explicitly: this is one of REV-17's 27 no-credit
     populations (family 4 core, family-4 no-op, `BANK_CREDIT_OVERDUE`),
-    so `_settlement_credit_line` (session 2.2) is deliberately never
+    so `add_settlement_credit` is deliberately never
     called here — every other settlement-anchored population does call it.
     """
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
         settlement, recon_lines, ledger_entries, gt = _generate_misposted_case(
             rng,
-            snapshot_ts,
+            snapshot_date,
             anomaly_posting=PostingVariant.BANK_MISPOST,
             exception_subtype=ExceptionSubtype.MISPOSTING,
             template_id="T-04",
@@ -306,7 +281,7 @@ def generate_family_4_batch(rng: random.Random, snapshot_date: date, n_cases: in
 
 def _generate_extra_line_case(
     rng: random.Random,
-    snapshot_ts: int,
+    snapshot_date: date,
     *,
     build_extra_line: Callable[[random.Random, str, str, int, list[ReconLine]], ReconLine],
     exception_subtype: ExceptionSubtype,
@@ -314,7 +289,7 @@ def _generate_extra_line_case(
     correction_legs_fn: Callable[[ReconLine], tuple[ExpectedJournalLeg, ...]],
     linked_records_fn: Callable[[ReconLine], tuple[str, ...]],
 ) -> tuple[Settlement, list[ReconLine], list[LedgerEntry], GroundTruthCase]:
-    settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+    settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
     n_payments = _n_payments(rng)
 
     recon_lines: list[ReconLine] = []
@@ -392,12 +367,11 @@ def _t02_correction_legs(refund_line: ReconLine) -> tuple[ExpectedJournalLeg, ..
 
 def generate_family_2_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_CASES_PER_FAMILY) -> FamilyBatch:
     """Family 2 — settled refund absent from the ledger. `ACCOUNTING_CORRECTION`/`OMISSION`, `AUTO_CLOSED`, `T-02`."""
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
         settlement, recon_lines, ledger_entries, gt = _generate_extra_line_case(
             rng,
-            snapshot_ts,
+            snapshot_date,
             build_extra_line=_build_refund_line,
             exception_subtype=ExceptionSubtype.OMISSION,
             template_id_fn=lambda _line: "T-02",
@@ -407,7 +381,7 @@ def generate_family_2_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(gt)
     return batch
 
@@ -434,11 +408,14 @@ def build_adjustment_line(
     and Razorpay would not apply a settlement-side deduction larger than
     the settlement itself.
 
-    `description` is exposed (unused by family 5 itself, which leaves it
-    `None`) so session 2.2's FR-06 tax-position population — structurally
-    the identical "unposted adjustment" shape per spec.md §4.2's Slot-C
-    note ("a 194-O deduction has a signature in the adjustment line") —
-    can reuse this builder rather than duplicating its amount/cap logic.
+    `description` carries FR-06's tax signature when the caller is the
+    tax-position population — structurally the identical "unposted
+    adjustment" shape per spec.md §4.2's Slot-C note ("a 194-O deduction
+    has a signature in the adjustment line") — and otherwise a neutral
+    description from the shared pool. Family 5 left the field `None` in
+    session 2.2, which made *having* a description the FR-06 tell rather
+    than what it said; §4.2 fixes the signature's content as the detection
+    surface, so every adjustment row now carries one.
     """
     is_credit = rng.random() < 0.5
     if is_credit:
@@ -471,7 +448,7 @@ def build_adjustment_line(
         posted_at=None,
         credit_type="default",
         dispute_id=None,
-        description=description,
+        description=neutral_adjustment_description(rng) if description is None else description,
         method=None,
     )
 
@@ -493,12 +470,11 @@ def _t05_t06_correction_legs(adj_line: ReconLine) -> tuple[ExpectedJournalLeg, .
 
 def generate_family_5_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_CASES_PER_FAMILY) -> FamilyBatch:
     """Family 5 — on-hold release / settlement adjustment unposted. `ACCOUNTING_CORRECTION`/`OMISSION`, `AUTO_CLOSED`, `T-05`/`T-06`."""
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
         settlement, recon_lines, ledger_entries, gt = _generate_extra_line_case(
             rng,
-            snapshot_ts,
+            snapshot_date,
             build_extra_line=build_adjustment_line,
             exception_subtype=ExceptionSubtype.OMISSION,
             template_id_fn=lambda line: "T-05" if line.credit > 0 else "T-06",
@@ -508,9 +484,25 @@ def generate_family_5_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(gt)
     return batch
+
+
+FAMILY_POPULATIONS = (
+    ("family_1", generate_family_1_batch),
+    ("family_2", generate_family_2_batch),
+    ("family_3", generate_family_3_batch),
+    ("family_4", generate_family_4_batch),
+    ("family_5", generate_family_5_batch),
+)
+"""The five FR-04 families in generation order, named.
+
+One list, read both by `generate_all_family_batches` and by the batch
+assembly in `generator/cli.py`, so the RNG draw order cannot differ
+between them and the fingerprint checkpoint's population labels cannot
+drift out of step with the batch they label.
+"""
 
 
 def generate_all_family_batches(
@@ -518,12 +510,6 @@ def generate_all_family_batches(
 ) -> FamilyBatch:
     """All five FR-04 families, 10 cases each by default — session 2.1's full checkpoint population."""
     combined = FamilyBatch()
-    for generate in (
-        generate_family_1_batch,
-        generate_family_2_batch,
-        generate_family_3_batch,
-        generate_family_4_batch,
-        generate_family_5_batch,
-    ):
+    for _name, generate in FAMILY_POPULATIONS:
         combined.extend(generate(rng, snapshot_date, n_cases_per_family))
     return combined

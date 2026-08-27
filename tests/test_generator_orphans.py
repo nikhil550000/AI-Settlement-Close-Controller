@@ -6,10 +6,17 @@ granularity correction) plus non-settlement noise (~50 lines, no cases).
 from __future__ import annotations
 
 import random
+import re
 from datetime import date
 
 import pytest
 
+from generator.narration import (
+    NAMED_COUNTERPARTIES,
+    OPAQUE_CREDIT_NARRATIONS,
+    REVERSAL_TEMPLATES,
+    narration_template,
+)
 from generator.orphans import (
     N_AMBIGUOUS_ORPHAN,
     N_DUPLICATE_CREDIT_CASES,
@@ -64,9 +71,10 @@ def test_no_orphan_case_has_a_settlement_recon_or_ledger_record():
 
 
 def test_unmatched_inbound_credit_narration_names_a_counterparty():
+    """§4.2: this population versus the opaque one "turns entirely on whether the narration identifies a counterparty"."""
     batch = generate_unmatched_inbound_credit_batch(random.Random(1), SNAPSHOT)
     for line in batch.bank_lines:
-        assert "NEFT CR-" in line.narration
+        assert any(counterparty in line.narration for counterparty in NAMED_COUNTERPARTIES)
         assert line.deposit_paise > 0
         assert line.withdrawal_paise == 0
     for gt in batch.ground_truth:
@@ -75,20 +83,27 @@ def test_unmatched_inbound_credit_narration_names_a_counterparty():
 
 
 def test_ambiguous_orphan_narration_is_opaque():
-    from generator.orphans import _OPAQUE_NARRATIONS
-
     batch = generate_ambiguous_orphan_batch(random.Random(1), SNAPSHOT)
     for line in batch.bank_lines:
-        assert line.narration in _OPAQUE_NARRATIONS
+        assert line.narration in OPAQUE_CREDIT_NARRATIONS
+        assert not any(counterparty in line.narration for counterparty in NAMED_COUNTERPARTIES)
     for gt in batch.ground_truth:
         assert gt.expected_outcome_state == OutcomeState.ABSTAINED
         assert gt.ground_truth_exception_class == ExceptionClass.AMBIGUOUS_CASE
 
 
-def test_reversal_unmatched_is_a_withdrawal_with_reversal_narration():
+def test_reversal_unmatched_is_a_withdrawal_and_reads_like_the_noise_reversals():
+    """§3.6 separates the two reversal populations by evidence — a matching prior credit — never by wording."""
     batch = generate_reversal_unmatched_batch(random.Random(1), SNAPSHOT)
+    noise_reversal_templates = {
+        narration_template(line.narration)
+        for line in generate_noise_bank_lines(random.Random(1), SNAPSHOT)
+        if narration_template(line.narration) in REVERSAL_TEMPLATES
+    }
+    assert noise_reversal_templates, "the noise pairs must contain reversals for the comparison to mean anything"
+
     for line in batch.bank_lines:
-        assert line.narration.startswith("REVERSAL-")
+        assert narration_template(line.narration) in REVERSAL_TEMPLATES
         assert line.withdrawal_paise > 0
         assert line.deposit_paise == 0
     for gt in batch.ground_truth:
@@ -115,14 +130,28 @@ def test_noise_bank_lines_count_and_carry_no_case():
 
 
 def test_noise_reversal_pairs_net_to_zero_and_share_a_utr():
+    """A credit and its own reversal: a wash the matcher must ignore, paired by the reference they share."""
     lines = generate_noise_bank_lines(random.Random(1), SNAPSHOT)
-    reversal_lines = [line for line in lines if line.narration.startswith("REVERSAL-")]
-    credit_lines = [line for line in lines if "UNRELATED VENDOR" in line.narration]
+    reversal_lines = [line for line in lines if narration_template(line.narration) in REVERSAL_TEMPLATES]
     assert len(reversal_lines) == N_NOISE_REVERSAL_PAIRS
-    assert len(credit_lines) == N_NOISE_REVERSAL_PAIRS
-    reversal_utrs = {line.narration.removeprefix("REVERSAL-") for line in reversal_lines}
-    credit_utrs = {line.narration.split("-")[-1] for line in credit_lines}
-    assert reversal_utrs == credit_utrs
+
+    reversal_refs = {ref for line in reversal_lines for ref in _reference_tokens(line.narration)}
+    credit_refs = {
+        ref
+        for line in lines
+        if line.deposit_paise > 0
+        for ref in _reference_tokens(line.narration)
+    }
+    assert reversal_refs <= credit_refs  # every reversal has its originating credit in the batch
+    for reference in reversal_refs:
+        matching = [line for line in lines if reference in _reference_tokens(line.narration)]
+        assert len(matching) == 2
+        assert sum(line.deposit_paise for line in matching) == sum(line.withdrawal_paise for line in matching)
+
+
+def _reference_tokens(narration: str) -> set[str]:
+    """The UTR-shaped tokens in a narration, found without any §4.6 matcher logic."""
+    return set(re.findall(r"[A-Z]{4}[0-9]{12}", narration))
 
 
 def test_orphan_generation_is_deterministic_given_the_same_seed():
