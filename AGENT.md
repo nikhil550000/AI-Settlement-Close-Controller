@@ -65,7 +65,7 @@ AI Settlement Close Controller/
 
 ## Current phase pointer
 
-**Phase 1, Session 1.1** (of 19 implementation sessions across 7 phases — see spec.md §6.3). This session builds the repo skeleton, `uv` environment, package layout with the generator/pipeline import guard, this file, and the `BUILDLOG.md` template. No schema, model, or generator code this session — that is Session 1.2.
+**Phase 2, Session 2.1 complete** (of 19 implementation sessions across 7 phases — see spec.md §6.3). Session 2.1 built the five FR-04 family injections (10 cases each) on top of Phase 1's clean-case generator.
 
 Check `BUILDLOG.md`'s most recent entry's **Next** field for the actual current state before starting any session — this pointer is a coarse anchor, the **Next** field is the real handoff.
 

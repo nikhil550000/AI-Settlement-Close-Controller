@@ -28,6 +28,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
+from enum import Enum
 
 from generator.rounding import percentage_of_paise
 from pipeline.money import Paise
@@ -58,12 +59,40 @@ PAYMENT_AMOUNT_MAX_RUPEES = 50_000
 FEE_PERCENT = Decimal("2")
 GST_ON_FEE_PERCENT = Decimal("18")
 
+ACCOUNT_BANK_ACCOUNT = ("1010", "Bank Account")
 ACCOUNT_RAZORPAY_CLEARING = ("1020", "Razorpay Clearing")
 ACCOUNT_SALES_REVENUE = ("4010", "Sales Revenue")
 ACCOUNT_PAYMENT_GATEWAY_CHARGES = ("5010", "Payment Gateway Charges")
 ACCOUNT_GST_ON_GATEWAY_CHARGES = ("5020", "GST on Gateway Charges")
 
 _PAYMENT_METHODS = ("card", "upi", "netbanking", "wallet")
+
+
+class PostingVariant(Enum):
+    """How a payment's ledger legs are booked, keyed to the §3.2 families.
+
+    The `recon_line` (Razorpay's own evidence) is identical across variants
+    — it always reports what actually happened. Only the merchant's ledger
+    legs vary, because these variants model *bookkeeping errors*, not
+    different underlying transactions. Session 2.1 (§3.5/§3.4).
+    """
+
+    CLEAN = "clean"
+    UNPOSTED_FEE_GROSS_CLEARING = "unposted_fee_gross_clearing"
+    """Family 1 (T-01): fee/GST never posted; Clearing debited at gross
+    (the only way `Dr Clearing / Cr Sales Revenue` balances without the
+    expense legs) — matches T-01's evidence predicate (§3.4, REV-16):
+    a `Sales Revenue` credit equal to gross `amount`."""
+
+    NET_REVENUE = "net_revenue"
+    """Family 3 (T-03): the net bank credit booked directly as revenue —
+    `Dr Clearing (net) / Cr Sales Revenue (net)` — matches T-03's evidence
+    predicate: a `Sales Revenue` credit equal to `amount - fee - tax`."""
+
+    BANK_MISPOST = "bank_mispost"
+    """Family 4 (T-04): fee/GST posted correctly, but the net leg lands on
+    `Bank Account` instead of `Razorpay Clearing` — a premature bank debit
+    before cash actually arrives (§3.2's family-4 wrong-account error)."""
 
 
 @dataclass(frozen=True)
@@ -97,6 +126,7 @@ def _generate_payment(
     settlement_id: str,
     settlement_utr: str,
     settlement_created_at: int,
+    posting: PostingVariant = PostingVariant.CLEAN,
 ) -> tuple[ReconLine, list[LedgerEntry]]:
     amount = _payment_amount_paise(rng)
     fee = percentage_of_paise(amount, FEE_PERCENT)
@@ -130,12 +160,37 @@ def _generate_payment(
         method=rng.choice(_PAYMENT_METHODS),
     )
 
-    legs = [
-        (ACCOUNT_RAZORPAY_CLEARING, net, Paise(0)),
-        (ACCOUNT_PAYMENT_GATEWAY_CHARGES, fee, Paise(0)),
-        (ACCOUNT_GST_ON_GATEWAY_CHARGES, tax, Paise(0)),
-        (ACCOUNT_SALES_REVENUE, Paise(0), amount),
-    ]
+    if posting is PostingVariant.CLEAN:
+        legs = [
+            (ACCOUNT_RAZORPAY_CLEARING, net, Paise(0)),
+            (ACCOUNT_PAYMENT_GATEWAY_CHARGES, fee, Paise(0)),
+            (ACCOUNT_GST_ON_GATEWAY_CHARGES, tax, Paise(0)),
+            (ACCOUNT_SALES_REVENUE, Paise(0), amount),
+        ]
+        narration = f"Sale {entity_id} — clean accrual booking (gross {amount}p, fee {fee}p, GST {tax}p)"
+    elif posting is PostingVariant.UNPOSTED_FEE_GROSS_CLEARING:
+        legs = [
+            (ACCOUNT_RAZORPAY_CLEARING, amount, Paise(0)),
+            (ACCOUNT_SALES_REVENUE, Paise(0), amount),
+        ]
+        narration = f"Sale {entity_id} booked at gross {amount}p — fee/GST not recognized"
+    elif posting is PostingVariant.NET_REVENUE:
+        legs = [
+            (ACCOUNT_RAZORPAY_CLEARING, net, Paise(0)),
+            (ACCOUNT_SALES_REVENUE, Paise(0), net),
+        ]
+        narration = f"Sale {entity_id} booked at net settlement credit {net}p"
+    elif posting is PostingVariant.BANK_MISPOST:
+        legs = [
+            (ACCOUNT_BANK_ACCOUNT, net, Paise(0)),
+            (ACCOUNT_PAYMENT_GATEWAY_CHARGES, fee, Paise(0)),
+            (ACCOUNT_GST_ON_GATEWAY_CHARGES, tax, Paise(0)),
+            (ACCOUNT_SALES_REVENUE, Paise(0), amount),
+        ]
+        narration = f"Sale {entity_id} — bank debited {net}p prematurely at capture"
+    else:
+        raise ValueError(f"unhandled posting variant: {posting}")
+
     ledger_entries = [
         LedgerEntry(
             journal_entry_id=_hex_id(rng, "je_"),
@@ -145,8 +200,7 @@ def _generate_payment(
             debit=debit,
             credit=credit,
             reference=entity_id,
-            narration=f"Sale {entity_id} — clean accrual booking (gross {amount}p, "
-            f"fee {fee}p, GST {tax}p)",
+            narration=narration,
             source=LedgerSource.ERP_IMPORT,
             resolution_id=None,
             case_id=None,
