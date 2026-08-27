@@ -17,7 +17,7 @@ REV-17's own arithmetic (`125 - 27 = 98`) as a cross-check.
 Every case reuses `generator/clean.py`'s and `generator/families.py`'s
 existing building blocks (`_generate_payment`, `_new_settlement_shell`,
 `_n_payments`, `_finalize_settlement`, `_account_leg`,
-`_settlement_credit_line`, `build_adjustment_line`) rather than
+`add_settlement_credit`, `build_adjustment_line`) rather than
 duplicating them — per the same reasoning session 2.1 logged for reusing
 session 1.3's clean-path helpers.
 """
@@ -27,14 +27,14 @@ from __future__ import annotations
 import random
 from datetime import date, datetime, timedelta, timezone
 
-from generator.bank_lines import settlement_credit_bank_line, settlement_credit_bank_line_no_utr
+from generator.bank_lines import add_settlement_credit
 from generator.clean import (
     ACCOUNT_RAZORPAY_CLEARING,
     PostingVariant,
     _generate_payment,
     _hex_id,
     _payment_amount_paise,
-    _snapshot_unix_ts,
+    settlement_created_timestamp,
 )
 from generator.families import (
     ACCOUNT_SALES_RETURNS_AND_ALLOWANCES,
@@ -42,9 +42,9 @@ from generator.families import (
     _finalize_settlement,
     _n_payments,
     _new_settlement_shell,
-    _settlement_credit_line,
     build_adjustment_line,
 )
+from generator.narration import TAX_SIGNATURES, ledger_narration, random_payment_method, random_utr
 from generator.timing import subtract_working_days
 from pipeline.ground_truth import (
     DeclineReason,
@@ -65,10 +65,7 @@ N_SETTLEMENT_AMOUNT_MISMATCH = 4
 N_DISPUTE_PENDING = 5
 N_AMBIGUOUS = 9
 
-_TAX_SIGNATURES = (
-    "TDS deduction under Section 194-O (e-commerce operator)",
-    "GST input tax credit eligibility review — MDR component",
-)
+_TAX_SIGNATURES = TAX_SIGNATURES
 """§4.2 Slot C: "A 194-O deduction has a signature in the adjustment line."
 
 FR-06's second exclusion (GST ITC eligibility on MDR) is given the same
@@ -76,6 +73,8 @@ adjustment-line shape for consistency — same schema, same unposted-line
 mechanism, only the narration signature differs — rather than inventing a
 second construction with no COA support (§3.2 fixes the chart of accounts
 at seven, none of them ITC/TDS-specific). Logged in BUILDLOG.md, Decided.
+The strings themselves moved to `generator/narration.py` in session 2.3,
+which owns every free-text string the generator writes.
 """
 
 
@@ -84,16 +83,18 @@ def _windowed_settlement_shell(
 ) -> tuple[str, str, int]:
     """A settlement shell dated `elapsed_working_days` before the snapshot (§3.3's T+2 rule).
 
-    Date-level (midnight UTC), not the random intraday offset
-    `_new_settlement_shell` draws — the timing-residual rule compares
-    *dates*, so precise placement relative to the T+2 boundary matters
-    here in a way it doesn't for the other populations.
+    The *date* is chosen deliberately here rather than drawn, because the
+    timing-residual rule compares dates and precise placement relative to
+    the T+2 boundary is this population's evidence. The time of day is
+    drawn exactly as every other population draws it: session 2.2 pinned
+    these settlements to midnight UTC, which left `created_at % 86400 == 0`
+    identifying the two window-anchored populations outright — a timestamp
+    block of the kind §3.5's fingerprint control forbids.
     """
     created_date = subtract_working_days(snapshot_date, elapsed_working_days)
-    settlement_created_at = _snapshot_unix_ts(created_date)
     settlement_id = _hex_id(rng, "setl_")
-    utr = _hex_id(rng, "UTR", n_bytes=6).upper()
-    return settlement_id, utr, settlement_created_at
+    utr = random_utr(rng)
+    return settlement_id, utr, settlement_created_timestamp(rng, created_date)
 
 
 def _clean_payments(
@@ -190,10 +191,9 @@ def generate_family_4_date_error_batch(
     rng: random.Random, snapshot_date: date, n_cases: int = N_FAMILY_4_DATE_ERROR
 ) -> FamilyBatch:
     """`ACCOUNTING_CORRECTION`/`MISPOSTING` (REV-19: wrong period), `REVIEW_REQUIRED`/`policy` (REV-11)."""
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
-        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
         n_payments = _n_payments(rng)
         anomaly_index = rng.randrange(n_payments)
 
@@ -221,7 +221,8 @@ def generate_family_4_date_error_batch(
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))  # precondition: the credit has landed
+        # Precondition for this variant (REV-05): the credit has landed.
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -248,10 +249,9 @@ def generate_family_4_date_error_batch(
 
 def generate_fr06_tax_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_FR06_TAX) -> FamilyBatch:
     """`ACCOUNTING_CORRECTION`/`OMISSION`, `REVIEW_REQUIRED`/`policy` (§2.5/FR-06: 194-O, GST ITC eligibility)."""
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for i in range(n_cases):
-        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
         recon_lines, ledger_entries = _clean_payments(rng, settlement_id, utr, settlement_created_at, _n_payments(rng))
 
         signature = _TAX_SIGNATURES[i % len(_TAX_SIGNATURES)]
@@ -264,7 +264,7 @@ def generate_fr06_tax_batch(rng: random.Random, snapshot_date: date, n_cases: in
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -295,10 +295,9 @@ def generate_settlement_utr_missing_batch(
     within that type). The bank credit still lands — REV-17 counts this
     population in the 98 with-credit set — but carries no UTR to embed.
     """
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
-        settlement_id, _utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+        settlement_id, _utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
         utr = ""
         recon_lines, ledger_entries = _clean_payments(rng, settlement_id, utr, settlement_created_at, _n_payments(rng))
         settlement = _finalize_settlement(settlement_id, utr, settlement_created_at, recon_lines)
@@ -306,11 +305,7 @@ def generate_settlement_utr_missing_batch(
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        created_date = datetime.fromtimestamp(settlement.created_at, tz=timezone.utc).date()
-        credit_date = created_date + timedelta(days=rng.randint(0, 1))
-        batch.bank_lines.append(
-            settlement_credit_bank_line_no_utr(rng, value_date=credit_date, amount=settlement.amount)
-        )
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -344,10 +339,9 @@ def generate_settlement_amount_mismatch_batch(
     ("Settlement header amount ≠ sum of its recon lines net of fees and
     tax"), not the merchant's books or the cash that moved.
     """
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
-        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
         recon_lines, ledger_entries = _clean_payments(rng, settlement_id, utr, settlement_created_at, _n_payments(rng))
         true_settlement = _finalize_settlement(settlement_id, utr, settlement_created_at, recon_lines)
 
@@ -357,10 +351,13 @@ def generate_settlement_amount_mismatch_batch(
         batch.settlements.append(mismatched_settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        created_date = datetime.fromtimestamp(mismatched_settlement.created_at, tz=timezone.utc).date()
-        credit_date = created_date + timedelta(days=rng.randint(0, 1))
-        batch.bank_lines.append(
-            settlement_credit_bank_line(rng, value_date=credit_date, amount=true_settlement.amount, utr=utr)
+        # The bank credits the *true* recon-line total; the header is the wrong record.
+        add_settlement_credit(
+            batch,
+            rng,
+            settlement=mismatched_settlement,
+            snapshot_date=snapshot_date,
+            amount=true_settlement.amount,
         )
         batch.ground_truth.append(
             GroundTruthCase(
@@ -399,10 +396,9 @@ def generate_dispute_pending_batch(
     entry" (§2.4). Books stay correctly booked; `dispute_id` on one payment
     is the only anomaly.
     """
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
-        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
         n_payments = _n_payments(rng)
         disputed_index = rng.randrange(n_payments)
 
@@ -423,7 +419,7 @@ def generate_dispute_pending_batch(
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -457,17 +453,20 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
     nothing refutes it either, so no template's evidence predicate can
     fire and no single defensible treatment exists.
     """
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = FamilyBatch()
     for _ in range(n_cases):
-        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_ts)
+        settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
         recon_lines, ledger_entries = _clean_payments(rng, settlement_id, utr, settlement_created_at, _n_payments(rng))
         settlement = _finalize_settlement(settlement_id, utr, settlement_created_at, recon_lines)
 
         phantom_ref = _hex_id(rng, "rfnd_")
         phantom_amount = _payment_amount_paise(rng)
         entry_date = datetime.fromtimestamp(settlement_created_at, tz=timezone.utc).date()
-        narration = f"Return {phantom_ref} — no corroborating recon-line evidence in batch"
+        # Shared pool, same as every other ledger entry (§3.5): the case's
+        # evidence is that `reference` resolves to nothing in the batch, and
+        # session 2.2's narration said so in words, which is the artifact the
+        # fingerprint control exists to remove.
+        narration = ledger_narration(rng, method=random_payment_method(rng))
         phantom_entries = [
             LedgerEntry(
                 journal_entry_id=_hex_id(rng, "je_"),
@@ -501,7 +500,7 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        batch.bank_lines.append(_settlement_credit_line(rng, settlement))
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -522,18 +521,22 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
     return batch
 
 
+EXCEPTION_POPULATIONS = (
+    ("family_4_no_op", generate_family_4_no_op_batch),
+    ("family_4_date_error", generate_family_4_date_error_batch),
+    ("fr06_tax", generate_fr06_tax_batch),
+    ("settlement_utr_missing", generate_settlement_utr_missing_batch),
+    ("bank_credit_overdue", generate_bank_credit_overdue_batch),
+    ("settlement_amount_mismatch", generate_settlement_amount_mismatch_batch),
+    ("dispute_pending", generate_dispute_pending_batch),
+    ("ambiguous", generate_ambiguous_batch),
+)
+"""This module's eight populations in generation order, named — see `FAMILY_POPULATIONS`."""
+
+
 def generate_all_exception_batches(rng: random.Random, snapshot_date: date) -> FamilyBatch:
     """All eight populations this module owns, 57 cases combined (spec.md §3.5's remaining settlement-anchored rows)."""
     combined = FamilyBatch()
-    for generate in (
-        generate_family_4_no_op_batch,
-        generate_family_4_date_error_batch,
-        generate_fr06_tax_batch,
-        generate_settlement_utr_missing_batch,
-        generate_bank_credit_overdue_batch,
-        generate_settlement_amount_mismatch_batch,
-        generate_dispute_pending_batch,
-        generate_ambiguous_batch,
-    ):
+    for _name, generate in EXCEPTION_POPULATIONS:
         combined.extend(generate(rng, snapshot_date))
     return combined

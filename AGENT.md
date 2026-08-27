@@ -65,7 +65,7 @@ AI Settlement Close Controller/
 
 ## Current phase pointer
 
-**Phase 2, Session 2.2 complete** (of 19 implementation sessions across 7 phases — see spec.md §6.3). Session 2.2 built the remaining §3.5 settlement-anchored populations, the four §3.6 orphan populations, non-settlement noise, and `bank_line` generation — the full 150-case reference batch now generates (`uv run generate --seed 1`).
+**Phase 2, Session 2.3 complete — Phase 2 done** (of 19 implementation sessions across 7 phases — see spec.md §6.3). Session 2.3 added the global pass that runs once over the assembled batch (`generator/finalize.py`): the shuffled ID re-mint, §4.6's 50/25/15/10 UTR narration split, and the shuffle of emission order, plus one shared narration pool (`generator/narration.py`) behind every free-text string the generator writes. `tests/test_generator_fingerprint.py` is the §3.5 fingerprint checkpoint; `pipeline/fingerprint.py` holds the statistic it and (per §5.3) the Phase-6 metrics JSON are built on.
 
 Check `BUILDLOG.md`'s most recent entry's **Next** field for the actual current state before starting any session — this pointer is a coarse anchor, the **Next** field is the real handoff.
 

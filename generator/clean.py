@@ -25,17 +25,17 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 
-from generator.bank_lines import settlement_credit_bank_line
+from generator.bank_lines import add_settlement_credit
+from generator.batch import GeneratedBatch
+from generator.narration import PAYMENT_METHODS, ledger_narration, random_utr
 from generator.rounding import percentage_of_paise
 from pipeline.ground_truth import ExceptionClass, ExceptionSubtype, GroundTruthCase, OutcomeState
 from pipeline.money import Paise
 from pipeline.schemas import (
-    BankLine,
     LedgerEntry,
     LedgerSource,
     RazorpayEntityType,
@@ -68,7 +68,18 @@ ACCOUNT_SALES_REVENUE = ("4010", "Sales Revenue")
 ACCOUNT_PAYMENT_GATEWAY_CHARGES = ("5010", "Payment Gateway Charges")
 ACCOUNT_GST_ON_GATEWAY_CHARGES = ("5020", "GST on Gateway Charges")
 
-_PAYMENT_METHODS = ("card", "upi", "netbanking", "wallet")
+_PAYMENT_METHODS = PAYMENT_METHODS  # moved to generator/narration.py, the one shared text pool (§3.5)
+
+SETTLEMENT_MAX_DAYS_BACK = 10
+"""Oldest a settlement may be, in calendar days before the batch snapshot.
+
+Drawn identically by every settlement-anchored population, snapshot date
+included as day 0. Session 2.2 drew 1..10 here while the two
+window-anchored populations (family-4 no-op, `BANK_CREDIT_OVERDUE`) placed
+their settlements by working-day arithmetic from the snapshot, which left
+"created on the snapshot date" belonging to exactly one population — a
+timestamp block of the kind §3.5's fingerprint control forbids.
+"""
 
 
 class PostingVariant(Enum):
@@ -98,13 +109,7 @@ class PostingVariant(Enum):
     before cash actually arrives (§3.2's family-4 wrong-account error)."""
 
 
-@dataclass(frozen=True)
-class CleanBatch:
-    settlements: list[Settlement] = field(default_factory=list)
-    recon_lines: list[ReconLine] = field(default_factory=list)
-    ledger_entries: list[LedgerEntry] = field(default_factory=list)
-    bank_lines: list[BankLine] = field(default_factory=list)
-    ground_truth: list[GroundTruthCase] = field(default_factory=list)
+CleanBatch = GeneratedBatch  # one container for every population (generator/batch.py)
 
 
 def _hex_id(rng: random.Random, prefix: str, n_bytes: int = 8) -> str:
@@ -113,6 +118,23 @@ def _hex_id(rng: random.Random, prefix: str, n_bytes: int = 8) -> str:
 
 def _snapshot_unix_ts(snapshot_date: date) -> int:
     return int(datetime.combine(snapshot_date, time.min, tzinfo=timezone.utc).timestamp())
+
+
+def settlement_created_timestamp(rng: random.Random, created_date: date) -> int:
+    """A settlement's `created_at`: midnight UTC on `created_date` plus a random time of day.
+
+    The intraday offset exists for one reason and it is a §3.5 fingerprint
+    control, not realism: session 2.2's window-anchored populations sat at
+    exactly midnight UTC while every other population carried an arbitrary
+    offset, so `created_at % 86400 == 0` picked out seventeen cases from
+    two named populations with no reference to any evidence.
+    """
+    return _snapshot_unix_ts(created_date) + rng.randint(0, 86_399)
+
+
+def random_settlement_date(rng: random.Random, snapshot_date: date) -> date:
+    """A settlement date drawn scenario-blind: uniform over the snapshot day and the ten before it."""
+    return snapshot_date - timedelta(days=rng.randint(0, SETTLEMENT_MAX_DAYS_BACK))
 
 
 def _truncated_lognormal_int(rng: random.Random, mu: float, sigma: float, lo: int, hi: int) -> int:
@@ -172,19 +194,16 @@ def _generate_payment(
             (ACCOUNT_GST_ON_GATEWAY_CHARGES, tax, Paise(0)),
             (ACCOUNT_SALES_REVENUE, Paise(0), amount),
         ]
-        narration = f"Sale {entity_id} — clean accrual booking (gross {amount}p, fee {fee}p, GST {tax}p)"
     elif posting is PostingVariant.UNPOSTED_FEE_GROSS_CLEARING:
         legs = [
             (ACCOUNT_RAZORPAY_CLEARING, amount, Paise(0)),
             (ACCOUNT_SALES_REVENUE, Paise(0), amount),
         ]
-        narration = f"Sale {entity_id} booked at gross {amount}p — fee/GST not recognized"
     elif posting is PostingVariant.NET_REVENUE:
         legs = [
             (ACCOUNT_RAZORPAY_CLEARING, net, Paise(0)),
             (ACCOUNT_SALES_REVENUE, Paise(0), net),
         ]
-        narration = f"Sale {entity_id} booked at net settlement credit {net}p"
     elif posting is PostingVariant.BANK_MISPOST:
         legs = [
             (ACCOUNT_BANK_ACCOUNT, net, Paise(0)),
@@ -192,9 +211,15 @@ def _generate_payment(
             (ACCOUNT_GST_ON_GATEWAY_CHARGES, tax, Paise(0)),
             (ACCOUNT_SALES_REVENUE, Paise(0), amount),
         ]
-        narration = f"Sale {entity_id} — bank debited {net}p prematurely at capture"
     else:
         raise ValueError(f"unhandled posting variant: {posting}")
+
+    # One shared pool, drawn identically for every posting variant (§3.5's
+    # fingerprint control). The narration names neither the anomaly nor any
+    # amount: session 2.2's text announced both, which made every family
+    # trivially separable by string match and put a second, redundant copy
+    # of the evidence into free text.
+    narration = ledger_narration(rng, method=recon_line.method)
 
     ledger_entries = [
         LedgerEntry(
@@ -215,10 +240,12 @@ def _generate_payment(
     return recon_line, ledger_entries
 
 
-def _generate_settlement(rng: random.Random, snapshot_ts: int) -> tuple[Settlement, list[ReconLine], list[LedgerEntry]]:
-    settlement_created_at = snapshot_ts - rng.randint(1 * 86_400, 10 * 86_400)
+def _generate_settlement(
+    rng: random.Random, snapshot_date: date
+) -> tuple[Settlement, list[ReconLine], list[LedgerEntry]]:
+    created_at = settlement_created_timestamp(rng, random_settlement_date(rng, snapshot_date))
     settlement_id = _hex_id(rng, "setl_")
-    utr = _hex_id(rng, "UTR", n_bytes=6).upper()
+    utr = random_utr(rng)
 
     n_payments = _truncated_lognormal_int(
         rng,
@@ -231,7 +258,7 @@ def _generate_settlement(rng: random.Random, snapshot_ts: int) -> tuple[Settleme
     recon_lines: list[ReconLine] = []
     ledger_entries: list[LedgerEntry] = []
     for _ in range(n_payments):
-        recon_line, legs = _generate_payment(rng, settlement_id, utr, settlement_created_at)
+        recon_line, legs = _generate_payment(rng, settlement_id, utr, created_at)
         recon_lines.append(recon_line)
         ledger_entries.extend(legs)
 
@@ -246,7 +273,7 @@ def _generate_settlement(rng: random.Random, snapshot_ts: int) -> tuple[Settleme
         fees=Paise(total_fees),
         tax=Paise(total_tax),
         utr=utr,
-        created_at=settlement_created_at,
+        created_at=created_at,
     )
     return settlement, recon_lines, ledger_entries
 
@@ -261,21 +288,16 @@ def generate_clean_batch(rng: random.Random, snapshot_date: date, n_settlements:
     is `NONE` / `AUTO_MATCHED` by construction: nothing is omitted,
     mis-posted, or mis-timed.
     """
-    snapshot_ts = _snapshot_unix_ts(snapshot_date)
     batch = CleanBatch()
     for _ in range(n_settlements):
-        settlement, recon_lines, ledger_entries = _generate_settlement(rng, snapshot_ts)
+        settlement, recon_lines, ledger_entries = _generate_settlement(rng, snapshot_date)
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
 
         # Every "Fully clean" settlement lands a matching bank credit — it
         # is not one of the 27 REV-17 no-credit populations.
-        created_date = datetime.fromtimestamp(settlement.created_at, tz=timezone.utc).date()
-        credit_date = created_date + timedelta(days=rng.randint(0, 1))
-        batch.bank_lines.append(
-            settlement_credit_bank_line(rng, value_date=credit_date, amount=settlement.amount, utr=settlement.utr)
-        )
+        add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
 
         batch.ground_truth.append(
             GroundTruthCase(
