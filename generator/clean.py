@@ -26,13 +26,16 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 
+from generator.bank_lines import settlement_credit_bank_line
 from generator.rounding import percentage_of_paise
+from pipeline.ground_truth import ExceptionClass, ExceptionSubtype, GroundTruthCase, OutcomeState
 from pipeline.money import Paise
 from pipeline.schemas import (
+    BankLine,
     LedgerEntry,
     LedgerSource,
     RazorpayEntityType,
@@ -100,6 +103,8 @@ class CleanBatch:
     settlements: list[Settlement] = field(default_factory=list)
     recon_lines: list[ReconLine] = field(default_factory=list)
     ledger_entries: list[LedgerEntry] = field(default_factory=list)
+    bank_lines: list[BankLine] = field(default_factory=list)
+    ground_truth: list[GroundTruthCase] = field(default_factory=list)
 
 
 def _hex_id(rng: random.Random, prefix: str, n_bytes: int = 8) -> str:
@@ -263,4 +268,27 @@ def generate_clean_batch(rng: random.Random, snapshot_date: date, n_settlements:
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
+
+        # Every "Fully clean" settlement lands a matching bank credit — it
+        # is not one of the 27 REV-17 no-credit populations.
+        created_date = datetime.fromtimestamp(settlement.created_at, tz=timezone.utc).date()
+        credit_date = created_date + timedelta(days=rng.randint(0, 1))
+        batch.bank_lines.append(
+            settlement_credit_bank_line(rng, value_date=credit_date, amount=settlement.amount, utr=settlement.utr)
+        )
+
+        batch.ground_truth.append(
+            GroundTruthCase(
+                case_id=settlement.id,
+                expected_outcome_state=OutcomeState.AUTO_MATCHED,
+                ground_truth_exception_class=ExceptionClass.NONE,
+                ground_truth_exception_subtype=ExceptionSubtype.NONE,
+                expected_linked_source_records=(settlement.id, *(line.entity_id for line in recon_lines)),
+                expected_resolution=None,
+                expected_journal_entries=(),
+                expected_template_ids=(),
+                expected_decline_reason=None,
+                should_auto_apply=False,
+            )
+        )
     return batch

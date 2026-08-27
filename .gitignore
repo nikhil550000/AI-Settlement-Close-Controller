@@ -15,3 +15,5 @@ ledger.db
 # Run scratch output
 /scratch/
 /.run/
+
+.claude
