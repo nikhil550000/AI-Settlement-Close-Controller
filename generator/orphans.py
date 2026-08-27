@@ -13,6 +13,21 @@ NEFT, self-matching reversal pairs) that carry no case at all — §3.6:
 "Bank charges stay noise, not cases," and the matcher must learn to
 correctly ignore them rather than raise a case.
 
+**"Unrelated NEFT" noise is always a debit (outbound, unrelated business
+banking activity), never a credit.** Session 2.2's first draft drew this
+50/50 credit/debit. A credit-direction draw used the exact same
+`credit_narration()`/`NAMED_COUNTERPARTIES` construction as a genuine
+`UNMATCHED_INBOUND_CREDIT` case — same narration pool, same party pool,
+same amount distribution, no settlement anchor either way — so nothing in
+`bank_line` could tell a noise credit from a real case credit apart.
+Found and fixed in session 3.2 before case assembly (component 2, fully
+deterministic, no LLM per §4.2) tried to build a rule that doesn't exist:
+an *outbound* transfer to an unrelated party is the realistic noise case
+(no business reconciles every vendor payment against Razorpay
+settlements), and it is what makes the population content-distinguishable
+from the credit-direction case populations without touching money or
+inventing a signal the schema doesn't carry.
+
 None of these are settlement-anchored: `case_id` is minted directly
 (`orphan_*`), and `expected_linked_source_records` cites `bank_line.line_id`
 values only — there is no settlement, recon_line, or ledger_entry to link.
@@ -266,22 +281,16 @@ def generate_noise_bank_lines(rng: random.Random, snapshot_date: date) -> list[B
         )
 
     for _ in range(N_NOISE_UNRELATED_NEFT):
-        is_deposit = rng.random() < 0.5
         amount = _payment_amount_paise(rng)
         counterparty = rng.choice(NAMED_COUNTERPARTIES)
         reference = random_utr(rng)
-        narration = (
-            credit_narration(rng, party=counterparty, utr=reference, shape=rng.choice(_ORPHAN_CREDIT_SHAPES))
-            if is_deposit
-            else debit_narration(rng, party=counterparty, reference=reference)
-        )
         lines.append(
             new_bank_line(
                 rng,
                 value_date=_random_value_date(rng, snapshot_date),
-                narration=narration,
-                withdrawal_paise=Paise(0) if is_deposit else amount,
-                deposit_paise=amount if is_deposit else Paise(0),
+                narration=debit_narration(rng, party=counterparty, reference=reference),
+                withdrawal_paise=amount,
+                deposit_paise=Paise(0),
             )
         )
 
