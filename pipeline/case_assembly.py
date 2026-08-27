@@ -92,8 +92,17 @@ class Case(BaseModel):
     """One assembled reconciliation case (§1.2), before matching or classification.
 
     `settlement`/`recon_lines` are populated for `SETTLEMENT_ANCHORED`
-    cases and empty for `ORPHAN` cases; `bank_lines` is the reverse. No
-    case carries both — §1.2's two anchor kinds are exclusive.
+    cases and empty for `ORPHAN` cases; `bank_lines` is the reverse at
+    construction time. No case carries both — §1.2's two anchor kinds are
+    exclusive.
+
+    `match_tier`/`residual_paise`/`in_settlement_window` are unset
+    (`None`) as assembled here — they are `pipeline/matcher.py`'s job
+    (component 3, session 3.3), which returns a `model_copy` of a
+    settlement-anchored `Case` with these filled in and its `bank_lines`
+    populated with the matched credit(s), if any. Orphan cases are already
+    evidence-complete from assembly and the matcher passes them through
+    unchanged.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -103,6 +112,15 @@ class Case(BaseModel):
     settlement: Settlement | None = None
     recon_lines: tuple[ReconLine, ...] = ()
     bank_lines: tuple[BankLine, ...] = ()
+    match_tier: int | None = None
+    """The winning FR-09 tier (0-3, §4.6), settlement-anchored cases only."""
+    residual_paise: int | None = None
+    """`settlement.amount` minus matched `deposit_paise`, with the §3.3 timing-residual
+    rule already applied (forced to 0 for a tier-3 match still inside the settlement
+    window). Settlement-anchored cases only."""
+    in_settlement_window: bool | None = None
+    """Set only for a tier-3 (no-match) case: whether `snapshot_date` still falls
+    inside the settlement's T+2 working-day window (§3.3)."""
 
 
 def assemble_cases(

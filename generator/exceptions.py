@@ -45,7 +45,7 @@ from generator.families import (
     build_adjustment_line,
 )
 from generator.narration import TAX_SIGNATURES, ledger_narration, random_payment_method, random_utr
-from generator.timing import subtract_working_days
+from pipeline.timing import subtract_working_days
 from pipeline.ground_truth import (
     DeclineReason,
     ExceptionClass,

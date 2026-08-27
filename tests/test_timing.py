@@ -1,10 +1,14 @@
-"""Session 2.2: the T+2 working-day settlement-window rule (spec.md §3.3)."""
+"""Session 2.2: the T+2 working-day settlement-window rule (spec.md §3.3).
+
+Relocated to `pipeline/timing.py` in session 3.3 so `pipeline/matcher.py`
+can import it without violating the generator/pipeline import guard.
+"""
 
 from __future__ import annotations
 
 from datetime import date
 
-from generator.timing import add_working_days, is_within_settlement_window, subtract_working_days
+from pipeline.timing import add_working_days, is_within_settlement_window, subtract_working_days
 
 
 def test_add_working_days_skips_weekend():

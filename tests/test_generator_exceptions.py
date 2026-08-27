@@ -33,7 +33,7 @@ from generator.exceptions import (
     generate_settlement_amount_mismatch_batch,
     generate_settlement_utr_missing_batch,
 )
-from generator.timing import is_within_settlement_window
+from pipeline.timing import is_within_settlement_window
 from pipeline.ground_truth import DeclineReason, ExceptionClass, ExceptionSubtype, OutcomeState
 from pipeline.money import Paise
 

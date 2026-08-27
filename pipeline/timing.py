@@ -10,12 +10,14 @@
 > public-holiday calendar. The weekends-only calendar is a deliberate
 > simplification and is disclosed as such.
 
-This module is generator-side only (session 2.2): it places the family-4
-no-op and `BANK_CREDIT_OVERDUE` settlements on the correct side of the
-window when *constructing* the batch. The Phase-3 matcher will need the
-identical rule to *classify* cases at run time — `settlement_window_deadline`
-and `is_within_settlement_window` are written so that session can import
-them unchanged rather than re-deriving the working-day arithmetic.
+Lives under `pipeline/` (relocated here session 3.3; originally written
+generator-side in session 2.2, when it placed the family-4 no-op and
+`BANK_CREDIT_OVERDUE` settlements on the correct side of the window while
+*constructing* the batch). `pipeline/matcher.py` needs the identical rule
+to *classify* cases at run time, and `tests/test_import_guard.py`
+statically forbids any `pipeline/` module from importing `generator/` —
+so the rule had to move rather than be re-derived or duplicated.
+`generator/exceptions.py` now imports it from here unchanged.
 """
 
 from __future__ import annotations
