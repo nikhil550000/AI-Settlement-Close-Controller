@@ -1,0 +1,17 @@
+# Secrets — never committed (spec.md §6.4)
+.env
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Mutated at runtime, rebuilt from the committed dataset (spec.md §6.4)
+*.sqlite
+*.sqlite3
+ledger.db
+
+# Run scratch output
+/scratch/
+/.run/
