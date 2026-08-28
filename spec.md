@@ -4,8 +4,8 @@
 **Build type:** Solo
 **Submission deadline:** September 5, 2026 — confirmed from the Buildathon page itself ("You have from today till 5 September"). **Internal ship target: September 3, 2026**, with Sept 4–5 held as contingency only. No work is planned into the contingency window.
 **Today:** August 27, 2026 — **7 days to internal ship target (Sept 3), 9 days to confirmed deadline (Sept 5)**
-**Spec version:** v0.7
-**Spec status:** Sections 1–6 locked. Sections 4 (architecture and tooling), 5 (evaluation methodology) and 6 (phase plan) written and locked in v0.5; §6.3 (session decomposition) and §6.4 (version control protocol) added in v0.6; §2.2's ledger-entry and raw-record-total estimates corrected in v0.7 (REV-23). Section 7 remains pending; §2.10 holds the non-goals list. Eight revisions to locked sections logged as REV-16 → REV-23. **Build starts Aug 28.**
+**Spec version:** v0.8
+**Spec status:** Sections 1–6 locked. Sections 4 (architecture and tooling), 5 (evaluation methodology) and 6 (phase plan) written and locked in v0.5; §6.3 (session decomposition) and §6.4 (version control protocol) added in v0.6; §2.2's ledger-entry and raw-record-total estimates corrected in v0.7 (REV-23); §1.7.4's and §4.5's idempotency constraint widened to the leg in v0.8 (REV-24). Section 7 remains pending; §2.10 holds the non-goals list. Nine revisions to locked sections logged as REV-16 → REV-24. **Build starts Aug 28.**
 
 ---
 
@@ -28,6 +28,8 @@ This spec is the single source of truth for the build. Every implementation deci
 - **v0.4** *(Aug 27, 2026)* — Section 3 completed and locked: 3.3 (close-pattern taxonomy), 3.4 (templates and posting-direction rules), 3.5 (generation strategy), 3.6 (orphan cases). Preceded by a full verification pass over v0.3, which found fifteen defects across locked sections; REV-05 → REV-15 log the eleven that required changes. Reference batch rescaled 120 → 150 cases. Build budget corrected 48h → 42h.
 - **v0.5** *(Aug 27, 2026)* — Sections 4, 5 and 6 written and locked in a single time-boxed pass, deliberately shallower than Section 3 because architecture is reversible, thresholds are meaningless before a real run, and a solo phase plan is a short list. REV-16 → REV-19 log four defects found while reading v0.4 for Step 4: an overlap between the `T-01` and `T-03` evidence predicates, a wrong bank-line decomposition in §2.2, a dead granularity exception in §3.6, and a subtype label that contradicted its own definition in §3.3. REV-20 closes the `exception_classification_accuracy` gap §2.11 deferred to Step 5.
 - **v0.6** *(Aug 27, 2026)* — §6.3 added: the day-level phase plan is subdivided into nineteen implementation sessions with per-session artifacts, checkpoints and model assignments, plus a session boundary rule and a stateless-handoff protocol. Logged as REV-21. §6.4 adds the version control protocol — commit cadence, phase tagging, secrets, and the committed-versus-ignored split — logged as REV-22. No other change; Sections 1–5 are untouched.
+- **v0.7** *(Aug 27, 2026)* — REV-23 logged during Session 2.2, the first session to generate all 125 settlements at once: §2.2's ledger-entry estimate contradicted §3.2's four-leg posting and was corrected from ~3,540 to ~5,800, with the raw-record total restated to ~7,600. Record-count estimates only; no case count, template or invariant affected. *(History line added retrospectively in v0.8 — v0.7 corrected §2.2 without recording itself here.)*
+- **v0.8** *(Aug 28, 2026)* — REV-24 logged during Session 4.3, the first session to instantiate a §3.4 template against the SQLite ledger: `UNIQUE(case_id, resolution_id)` rejected the second and third legs of every correcting entry, making `AUTO_CLOSED` unreachable for all 50 cases the §3.5 table assigns to it. Constraint widened to `(case_id, resolution_id, account_code)` in §1.7.4 and §4.5. §1.7.5's entry-level idempotency check and §3.4's `resolution_id` rule are unchanged.
 
 ---
 
@@ -176,7 +178,7 @@ The following invariants apply to every automated decision the Controller makes.
 1. **Monetary arithmetic uses integer paise.** All comparisons and residuals are exact; no floating-point rupees anywhere in matching or JV computation.
 2. **Journal entries reaching `AUTO_CLOSED` must be instantiated from a fixed allowlist of accounting templates** (defined in Section 3). The model may classify which template applies and provide reasoning, but auto-applied accounts and amounts must be deterministically derived from source evidence — the model cannot invent accounts, amounts, or narrations on the automated path.
 3. **Every automatic decision cites the source records and deterministic calculation that justify it** — no unsourced conclusions reach an auto-action state.
-4. **Applied corrections are idempotent.** Each adjustment is tied to a unique `(case_id, resolution_id)` pair; reprocessing the same case cannot double-post. The synthetic ledger enforces this with a uniqueness constraint on the pair.
+4. **Applied corrections are idempotent.** Each adjustment is tied to a unique `(case_id, resolution_id)` pair; reprocessing the same case cannot double-post. The synthetic ledger enforces this with a uniqueness constraint on `(case_id, resolution_id, account_code)` — the pair identifies the correction, and the account code separates that correction's own legs, which are separate rows under §3.1's per-leg schema. *(Widened from the pair alone in REV-24; at pair granularity the second leg of every §3.4 template was rejected and no case could reach `AUTO_CLOSED`.)*
 5. **Any failed safety validation prevents auto-action.** Validations applied to every candidate JV before it reaches `AUTO_CLOSED`:
    - `sum(debits_paise) == sum(credits_paise)`;
    - selected template is in the allowlist;
@@ -778,7 +780,7 @@ Stated, not argued.
 - **Python 3.11+**, dependencies via `uv`.
 - **Pydantic v2** for the four canonical schemas in §3.1.
 - **Money:** `int` paise end to end behind a `Paise = NewType('Paise', int)` alias. `decimal.Decimal` with `ROUND_HALF_UP` appears only inside the generator's fee and GST rounding and is cast to `int` immediately. No float touches matching, residual computation, or JV derivation (NFR-04).
-- **Storage:** **SQLite** for the synthetic ledger, with a `UNIQUE(case_id, resolution_id)` constraint at the schema level. This is the reason for the choice: invariant 1.7.4's idempotency guarantee becomes a database constraint rather than an application check, which is the difference between an invariant and a convention. Raw `sqlite3`, no ORM. Inputs and ground truth as JSONL.
+- **Storage:** **SQLite** for the synthetic ledger, with a `UNIQUE(case_id, resolution_id, account_code)` constraint at the schema level *(widened from `(case_id, resolution_id)` in REV-24)*. This is the reason for the choice: invariant 1.7.4's idempotency guarantee becomes a database constraint rather than an application check, which is the difference between an invariant and a convention. Raw `sqlite3`, no ORM. Inputs and ground truth as JSONL.
 - **Bank statements:** `pandas` plus `openpyxl` for CSV and XLSX. The three FR-08 profiles are YAML column maps, not code.
 - **Report:** Jinja2 rendering one HTML file with inlined CSS and a JSON blob in a `<script>` tag, filtered by vanilla JS. No CDN, no build step, no external fetch (FR-11).
 - **CLI:** `typer`.
@@ -1197,3 +1199,34 @@ Revisions to locked sections. Required by the convention in Section 0.
 **Issue.** REV-13 re-derived FR-01's ledger-entry estimate as ~3,540, stated as following from "the payments-per-settlement distribution." But §3.2's family-3 worked example fixes the correct clean posting at **four** ledger legs per payment — `Dr Razorpay Clearing, Dr Payment Gateway Charges, Dr GST on Gateway Charges / Cr Sales Revenue` — and that is the exact posting session 1.3's generator implements (verified balanced by session 1.3's and 2.1's tests) and session 2.2 extends unchanged to every remaining settlement-anchored population. At §3.5's stated ~11 payments per settlement across 125 settlements (≈1,375–1,450 payments), four legs per payment yields roughly 5,500–5,800 ledger entries, not ~3,540 — REV-13's re-derivation implicitly assumed under half that many legs per payment, which is not reconcilable with §3.2's locked posting. Session 2.2's actual generator run measured this directly: 1,449 payment-type recon lines produced 5,774 ledger entries, 3.98 legs/payment, confirming the four-leg rule and disconfirming REV-13's total. This was caught only now because no session before 2.2 generated the full 125-settlement population at once; sessions 1.3 and 2.1 each ran a subset (18 and 50 settlements respectively) and no checkpoint before 2.2 asserted the raw ledger-entry total.
 
 **Change.** §2.2's `Ledger entries` estimate is corrected from ~3,540 to **~5,800**, and `Raw records, total` from ~5,340 to **~7,600** (1,500 + 125 + 175 + 5,800, restated the same way REV-13 summed it). No other row changes. No case count, template, chart-of-accounts, or invariant is affected — this is a record-count estimate only, and no session checkpoint through 2.2 asserted the prior figure.
+
+### REV-24 — idempotency constraint widened to the leg *(v0.8, Aug 28, 2026 — revises locked §1.7.4, §1.7.5 and §4.5)*
+
+**Issue.** Three locked statements cannot all hold, and together they make `AUTO_CLOSED` unreachable for every case in the batch.
+
+1. §1.7.4 and §4.5 place a `UNIQUE(case_id, resolution_id)` constraint on the `ledger_entry` table — a **row**-level constraint. Session 1.2 built it exactly as written.
+2. §3.1 defines `ledger_entry` as one row **per leg**: `account_code`, `debit` and `credit` are singular, and §3.2's postings are given as multi-leg entries.
+3. §3.4 gives every one of the six templates **two or three legs**, and fixes `resolution_id` as "unique per `(case_id, template_id)`".
+
+A `T-01` correction is therefore three rows sharing one `(case_id, resolution_id)` pair. The first leg inserts; the second and third are rejected by the constraint. Demonstrated in session 4.3 against the session-1.2 DDL:
+
+```
+leg 0 (5010 Payment Gateway Charges) inserted OK
+leg 1 (5020 GST on Gateway Charges)  REJECTED: UNIQUE constraint failed: ledger_entry.case_id, ledger_entry.resolution_id
+leg 2 (1020 Razorpay Clearing)       REJECTED: UNIQUE constraint failed: ledger_entry.case_id, ledger_entry.resolution_id
+```
+
+Every correcting entry is truncated to its first leg, fails §1.7.5's `sum(debits) == sum(credits)` check, and the case is downgraded. No case reaches `AUTO_CLOSED`, contradicting §3.5's case-allocation table (50 `AUTO_CLOSED` cases) and §2.3's ~70% build weight on that state.
+
+The invariant itself is correct and achievable — "reprocessing the same case cannot double-post" is the right guarantee. What is wrong is the **granularity** of its enforcement: a per-row constraint on a per-leg table cannot express "this multi-leg entry was posted once." This was caught only now because session 1.2's checkpoint tested the constraint with single-row inserts, which is all that existed to test before §3.4's templates were instantiated in session 4.2.
+
+**Change.** The database constraint is widened to the leg: `UNIQUE(case_id, resolution_id, account_code)`.
+
+- §1.7.4's final sentence gains "per leg": the synthetic ledger enforces idempotency with a uniqueness constraint on `(case_id, resolution_id, account_code)`. The pair `(case_id, resolution_id)` remains the identity of a correction; the account code distinguishes that correction's legs from one another and nothing else.
+- §4.5's storage line is corrected to the same three-column constraint, with its rationale unchanged — idempotency remains a database constraint rather than an application check.
+- §1.7.5's check "the entry has not previously been posted for this `(case_id, resolution_id)`" is **unchanged**. It is an entry-level question and stays one: the application queries for any row carrying the pair, and the widened constraint is the backstop underneath it.
+- §3.4's "`resolution_id` is unique per `(case_id, template_id)`" is **unchanged**, and is what makes the widened constraint safe to read: one resolution per template per case, its legs separated by account.
+
+**Verified before adopting.** No template in §3.4 posts the same account twice within one entry, so `account_code` separates the legs of every one of the six without collision. A second run of the same batch re-mints the identical `(case_id, resolution_id, account_code)` triple for every leg and is rejected leg-for-leg, which is the behaviour §6.3's session-4.3 checkpoint ("running the same batch twice posts nothing on the second pass") asks for.
+
+**Alternatives considered and rejected.** Making `resolution_id` itself per-leg (`"T-01:5010"`) keeps the DDL untouched but revises §3.4's sentence instead and leaves no single id naming one correcting entry in the audit trail (§1.8). A separate `resolution` header table carrying the constraint is the textbook data model and would keep §1.7.4 literally true, but adds a table the spec names nowhere. The widened constraint changes only the thing that is actually wrong.
