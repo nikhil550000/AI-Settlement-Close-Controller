@@ -57,6 +57,7 @@ from pydantic import BaseModel, ConfigDict
 
 from pipeline.apply import CaseOutcome
 from pipeline.case_assembly import Case, CaseKind
+from pipeline.exception_class import OPERATIONAL_SUBTYPES
 from pipeline.ground_truth import (
     DeclineReason,
     ExceptionSubtype,
@@ -78,10 +79,12 @@ class MetricsError(Exception):
     """
 
 
-GRADED_SUBTYPES: tuple[SubtypeLabel, ...] = tuple(
-    label for label in SubtypeLabel if label is not SubtypeLabel.AMBIGUOUS_CASE
-)
+GRADED_SUBTYPES: tuple[SubtypeLabel, ...] = OPERATIONAL_SUBTYPES
 """The seven `OPERATIONAL_EXCEPTION` subtypes the macro average covers (§5.2, REV-25).
+
+Aliased to `pipeline.exception_class.OPERATIONAL_SUBTYPES` (session 6.2) so
+the tuple the macro averages over and the tuple the class assignment reads as
+`OPERATIONAL_EXCEPTION` are one object and cannot drift apart.
 
 `SubtypeLabel`'s declaration order is §3.3's table order followed by
 `DISPUTE_PENDING`, the "seventh subtype" §3.3 names in the sentence beneath

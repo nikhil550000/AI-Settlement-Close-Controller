@@ -55,7 +55,13 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.case_assembly import Case, CaseKind
-from pipeline.ground_truth import DeclineReason, ExceptionSubtype, OutcomeState
+from pipeline.exception_class import is_timing_attributed, predict_exception_class
+from pipeline.ground_truth import (
+    DeclineReason,
+    ExceptionClass,
+    ExceptionSubtype,
+    OutcomeState,
+)
 from pipeline.instantiator import CandidateJournalEntry
 from pipeline.policy import PolicyDecision, evaluate_policy
 from pipeline.predicates import CaseEvidence
@@ -112,6 +118,19 @@ class CaseOutcome(BaseModel):
     Recorded for every case a classifier saw, whether or not it changed `state` — only
     `UNMATCHED_INBOUND_CREDIT` does (see `assign_state`); this field is the audit trail
     for what component 5 said regardless."""
+
+    exception_class: ExceptionClass | None = None
+    """§3.3's class for this case — the second of the two labels §3.3 says every case
+    carries independently (session 6.2, `pipeline.exception_class`).
+
+    Filled by `apply_batch`, which holds both the `Case` and its finished `CaseOutcome`;
+    `apply_case` leaves it `None` because the timing attribution it needs is a property
+    of the case, not of the posting. A `CaseOutcome` built by hand in a test therefore
+    carries `None`, and §5.2's class confusion matrix rejects that rather than reading
+    it as `NONE` — an unassigned class and the `NONE` sentinel are different facts.
+
+    It classifies; it decides nothing. No component reads it, it gates no posting, and
+    `assign_state` neither takes nor returns it."""
 
     residual_paise: int = 0
     """The books-versus-evidence residual after this run (§1.7.5, `pipeline.reconciliation`)."""
@@ -550,6 +569,27 @@ def apply_case(
     )
 
 
+def _exception_class(case: Case, outcome: CaseOutcome) -> ExceptionClass:
+    """§3.3's class for a finished case (session 6.2, `pipeline.exception_class`).
+
+    Assigned here rather than inside `apply_case` because the timing
+    attribution is a property of the `Case` — the matcher's own reason for
+    zeroing the residual — and `apply_case` reasons about the posting. The
+    evidence handed over is the evidence `assign_state` saw, read back off the
+    outcome it produced, plus that one field from the case.
+    """
+    return predict_exception_class(
+        declined_by_policy=outcome.decline_reason is DeclineReason.POLICY,
+        has_entries=bool(
+            outcome.applied_entries or outcome.replayed_entries or outcome.proposed_entries
+        ),
+        triggered_subtypes=outcome.triggered_subtypes,
+        classified_subtype=outcome.classified_subtype,
+        timing_attributed=is_timing_attributed(case),
+        residual_paise=outcome.residual_paise,
+    )
+
+
 def apply_batch(
     conn: sqlite3.Connection,
     cases: Sequence[Case],
@@ -580,18 +620,17 @@ def apply_batch(
     outcomes: list[CaseOutcome] = []
     for case in cases:
         evidence = evidence_by_case.get(case.case_id) or CaseEvidence(case_id=case.case_id)
-        outcomes.append(
-            apply_case(
-                conn,
-                state,
-                case,
-                evidence,
-                candidates_by_case.get(case.case_id, ()),
-                posting_date=posting_date,
-                known_record_ids=known_record_ids,
-                classification=classifications.get(case.case_id),
-            )
+        outcome = apply_case(
+            conn,
+            state,
+            case,
+            evidence,
+            candidates_by_case.get(case.case_id, ()),
+            posting_date=posting_date,
+            known_record_ids=known_record_ids,
+            classification=classifications.get(case.case_id),
         )
+        outcomes.append(outcome.model_copy(update={"exception_class": _exception_class(case, outcome)}))
 
     return BatchOutcome(
         outcomes=tuple(outcomes),
