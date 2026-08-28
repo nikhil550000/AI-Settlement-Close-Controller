@@ -55,6 +55,7 @@ from pipeline.metrics import (
     MetricsError,
     MetricsReport,
     Rate,
+    RunProvenance,
     align_ground_truth,
     compute_metrics,
     rate,
@@ -619,16 +620,22 @@ def build_eval_report(
     *,
     arm: str,
     seed: int | None = None,
+    provenance: RunProvenance | None = None,
 ) -> EvalReport:
     """The §1.6 surface plus §5.2's matrices and §5.5's review, for one run.
 
     One call, one alignment: `compute_metrics` and both matrices are built
     over the same `align_ground_truth` join, so the matrices cannot end up
     describing a different set of cases from the metrics printed beside them.
+
+    `provenance` is passed straight through to `compute_metrics` — session
+    7.2's FR-13 pin (seed, git SHA, model ID, cache hit rate) — and defaults
+    to `None` exactly as `compute_metrics` already does, so every session
+    6.1/6.2 caller of this function is unaffected.
     """
     by_outcome = {outcome.case_id: outcome for outcome in outcomes}
     by_truth = align_ground_truth(cases, ground_truth)
-    metrics = compute_metrics(cases, outcomes, ground_truth)
+    metrics = compute_metrics(cases, outcomes, ground_truth, provenance=provenance)
     return EvalReport(
         seed=seed,
         arm=arm,

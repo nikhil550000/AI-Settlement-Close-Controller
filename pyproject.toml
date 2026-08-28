@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 generate = "generator.cli:app"
+reconcile = "pipeline.cli:app"
 
 [dependency-groups]
 dev = [
