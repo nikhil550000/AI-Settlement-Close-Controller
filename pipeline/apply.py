@@ -62,6 +62,7 @@ from pipeline.predicates import CaseEvidence
 from pipeline.reconciliation import case_residual_paise
 from pipeline.schemas import LedgerEntry, LedgerSource
 from pipeline.storage import fetch_ledger_entries, insert_ledger_entries
+from pipeline.subtype_label import SubtypeLabel
 from pipeline.validator import (
     CheckResult,
     ValidationCheck,
@@ -105,6 +106,12 @@ class CaseOutcome(BaseModel):
 
     triggered_subtypes: tuple[ExceptionSubtype, ...] = ()
     """§3.3 subtype triggers that fired — evidence, not yet a classification (component 5)."""
+
+    classified_subtype: SubtypeLabel | None = None
+    """Component 5's assigned label for this case, when a classifier ran (session 5.2).
+    Recorded for every case a classifier saw, whether or not it changed `state` — only
+    `UNMATCHED_INBOUND_CREDIT` does (see `assign_state`); this field is the audit trail
+    for what component 5 said regardless."""
 
     residual_paise: int = 0
     """The books-versus-evidence residual after this run (§1.7.5, `pipeline.reconciliation`)."""
@@ -272,8 +279,20 @@ def assign_state(
     declined_by_policy: bool,
     triggered_subtypes: Sequence[ExceptionSubtype],
     residual_paise: int,
+    classified_unmatched_inbound_credit: bool = False,
 ) -> tuple[OutcomeState, DeclineReason | None]:
     """§1.3's five terminal states, assigned from evidence (§3.3's population mapping).
+
+    `classified_unmatched_inbound_credit` is component 5's one contribution to state
+    routing (session 5.2's interface decision, deferred by session 5.1): of the eight
+    labels a classifier can assign, seven are adopted from a trigger component 4
+    already fired (branch 4 already sees those via `triggered_subtypes`), and
+    `AMBIGUOUS_CASE` changes nothing (branch 6 is already its fallthrough).
+    `UNMATCHED_INBOUND_CREDIT` is the one label with no deterministic trigger behind
+    it — "turns entirely on whether the free-text narration identifies a
+    counterparty" (§4.2) — so it is the only classification that can move a case out
+    of branch 6 and into branch 4. Default `False` so every pre-5.2 caller (and every
+    case a classifier never saw) is unaffected.
 
     The order of the branches is the precedence, and each is §3.3's:
 
@@ -292,7 +311,8 @@ def assign_state(
        `REVIEW_REQUIRED` population is policy, and confidence declines
        "appear instead as cases whose ground truth is `AUTO_CLOSED` that
        the system declined".
-    4. A fired **subtype trigger** with no correction is
+    4. A fired **subtype trigger** — or a classifier-assigned
+       `UNMATCHED_INBOUND_CREDIT`, see above — with no correction is
        `EXTERNAL_ACTION_REQUIRED` (§3.3: `OPERATIONAL_EXCEPTION`'s terminal
        state).
     5. A **zero residual** with nothing to correct and nothing to escalate
@@ -312,7 +332,7 @@ def assign_state(
         return OutcomeState.AUTO_CLOSED, None
     if has_candidates:
         return OutcomeState.REVIEW_REQUIRED, DeclineReason.CONFIDENCE
-    if triggered_subtypes:
+    if triggered_subtypes or classified_unmatched_inbound_credit:
         return OutcomeState.EXTERNAL_ACTION_REQUIRED, None
     if residual_paise == 0:
         return OutcomeState.AUTO_MATCHED, None
@@ -328,33 +348,43 @@ def apply_case(
     *,
     posting_date: date,
     known_record_ids: frozenset[str],
+    classification: SubtypeLabel | None = None,
 ) -> CaseOutcome:
     """Validate, apply, re-reconcile and assign a terminal state for one case.
 
     `state` carries the ledger as it stands, including anything a previous
     run posted, so the idempotency checks see prior adjustments.
+
+    `classification` is component 5's label for this case, when a classifier
+    ran (session 5.2) — `None` on a first pass, or for any case a classifier
+    never saw. See `assign_state` for the one label (`UNMATCHED_INBOUND_CREDIT`)
+    that can change the outcome; every other label is recorded on
+    `CaseOutcome.classified_subtype` without affecting `state`.
     """
     policy_decisions = evaluate_policy(case, evidence, state.by_reference)
     triggered = tuple(trigger.subtype for trigger in evidence.subtype_triggers)
+    classified_unmatched_inbound_credit = classification is SubtypeLabel.UNMATCHED_INBOUND_CREDIT
 
     def residual() -> int:
         return case_residual_paise(case, state.by_reference, state.by_case)
 
     if not candidates:
         current = residual()
-        state, reason = assign_state(
+        outcome_state, reason = assign_state(
             has_candidates=False,
             applied_or_replayed=False,
             declined_by_policy=bool(policy_decisions),
             triggered_subtypes=triggered,
+            classified_unmatched_inbound_credit=classified_unmatched_inbound_credit,
             residual_paise=current,
         )
         return CaseOutcome(
             case_id=case.case_id,
-            state=state,
+            state=outcome_state,
             decline_reason=reason,
             policy_decisions=policy_decisions,
             triggered_subtypes=triggered,
+            classified_subtype=classification,
             residual_paise=current,
         )
 
@@ -368,6 +398,7 @@ def apply_case(
             proposed_entries=tuple(candidates),
             policy_decisions=policy_decisions,
             triggered_subtypes=triggered,
+            classified_subtype=classification,
             residual_paise=residual(),
         )
 
@@ -445,6 +476,7 @@ def apply_case(
             proposed_entries=tuple(candidates),
             validations=tuple(reports),
             triggered_subtypes=triggered,
+            classified_subtype=classification,
             residual_paise=residual(),
         )
 
@@ -486,6 +518,7 @@ def apply_case(
                     ]
                 ),
                 triggered_subtypes=triggered,
+                classified_subtype=classification,
                 residual_paise=residual(),
             )
         conn.commit()
@@ -512,6 +545,7 @@ def apply_case(
         replayed_entries=tuple(replayed),
         validations=tuple(reports),
         triggered_subtypes=triggered,
+        classified_subtype=classification,
         residual_paise=residual(),
     )
 
@@ -523,13 +557,23 @@ def apply_batch(
     candidates: Sequence[CandidateJournalEntry],
     *,
     posting_date: date,
+    classifications: Mapping[str, SubtypeLabel] | None = None,
 ) -> BatchOutcome:
-    """Run component 8 over a whole batch. `conn` must already hold the merchant ledger."""
+    """Run component 8 over a whole batch. `conn` must already hold the merchant ledger.
+
+    `classifications` is component 5's output, keyed by `case_id` (session 5.2) —
+    `None` (the default) reproduces every pre-5.2 call exactly. `pipeline.run.run_batch`
+    calls this twice when a classifier is supplied: once with `classifications=None` to
+    find the non-auto-close cases a classifier needs to see, and again with its output,
+    so the interface here stays a plain lookup rather than `apply_batch` knowing how to
+    run a classifier itself.
+    """
     evidence_by_case = {evidence.case_id: evidence for evidence in evidences}
     candidates_by_case: dict[str, list[CandidateJournalEntry]] = {}
     for candidate in candidates:
         candidates_by_case.setdefault(candidate.case_id, []).append(candidate)
 
+    classifications = classifications or {}
     state = LedgerState(fetch_ledger_entries(conn))
     known_record_ids = batch_record_ids(cases, state.entries)
 
@@ -545,6 +589,7 @@ def apply_batch(
                 candidates_by_case.get(case.case_id, ()),
                 posting_date=posting_date,
                 known_record_ids=known_record_ids,
+                classification=classifications.get(case.case_id),
             )
         )
 

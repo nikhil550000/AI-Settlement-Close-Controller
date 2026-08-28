@@ -76,6 +76,7 @@ buildable and the choice is real rather than one-sided.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 from enum import StrEnum
@@ -85,7 +86,28 @@ from pydantic import BaseModel, ConfigDict
 from pipeline.apply import CaseOutcome
 from pipeline.case_assembly import Case, CaseKind
 from pipeline.ground_truth import ExceptionSubtype, OutcomeState
+from pipeline.llm_cache import CacheMissError, CacheMode, PromptCache
+from pipeline.llm_client import LLMClient
 from pipeline.predicates import CaseEvidence
+from pipeline.subtype_label import SubtypeLabel
+
+__all__ = [
+    "SubtypeLabel",
+    "ClassificationSource",
+    "EvidenceBundle",
+    "ClassificationResult",
+    "non_auto_close_case_ids",
+    "build_evidence_bundle",
+    "build_evidence_bundles",
+    "classify_case_baseline",
+    "classify_batch_baseline",
+    "classification_distribution",
+    "SUBTYPE_DEFINITIONS",
+    "build_slot_a_prompt",
+    "parse_slot_a_response",
+    "classify_case_llm",
+    "classify_batch_llm",
+]
 
 _NON_AUTO_CLOSE_STATES = frozenset(
     {OutcomeState.REVIEW_REQUIRED, OutcomeState.EXTERNAL_ACTION_REQUIRED, OutcomeState.ABSTAINED}
@@ -94,27 +116,6 @@ _NON_AUTO_CLOSE_STATES = frozenset(
 ones, `AUTO_MATCHED` and `AUTO_CLOSED`. 150 - 30 - 50 = 70 exactly, by the §3.6
 batch totals, regardless of seed — every population's count is fixed by §3.5/§3.6,
 not drawn."""
-
-
-class SubtypeLabel(StrEnum):
-    """Slot A's eight-value output vocabulary (§4.2): the seven `OPERATIONAL_EXCEPTION`
-    subtypes plus `AMBIGUOUS_CASE`.
-
-    Deliberately its own type rather than `pipeline.ground_truth.ExceptionSubtype`
-    reused whole: that enum carries ten members, including `NONE`, `OMISSION` and
-    `MISPOSTING`, none of which Slot A may ever emit under constrained decoding.
-    String values match `ExceptionSubtype`'s for the seven shared members, so a
-    fired trigger converts to a label with no translation table.
-    """
-
-    SETTLEMENT_UTR_MISSING = "SETTLEMENT_UTR_MISSING"
-    BANK_CREDIT_OVERDUE = "BANK_CREDIT_OVERDUE"
-    SETTLEMENT_AMOUNT_MISMATCH = "SETTLEMENT_AMOUNT_MISMATCH"
-    UNMATCHED_INBOUND_CREDIT = "UNMATCHED_INBOUND_CREDIT"
-    REVERSAL_UNMATCHED = "REVERSAL_UNMATCHED"
-    DUPLICATE_CREDIT = "DUPLICATE_CREDIT"
-    DISPUTE_PENDING = "DISPUTE_PENDING"
-    AMBIGUOUS_CASE = "AMBIGUOUS_CASE"
 
 
 class ClassificationSource(StrEnum):
@@ -127,6 +128,11 @@ class ClassificationSource(StrEnum):
     KEYWORD_BASELINE = "keyword_baseline"
     """This session's deterministic classifier: the §5.4 ablation arm, and the
     disclosed fallback if Phase 5 falls behind (§6.3)."""
+
+    LLM_SLOT_A = "llm_slot_a"
+    """§4.2's graded slot: `pipeline.llm_client.FIREWORKS_MODEL_ID` on Fireworks, under
+    constrained decoding, resolved through `pipeline.llm_cache.PromptCache` (§4.3). See
+    that constant's docstring for why it is not §4.4's literal `llama-v3p3-70b-instruct`."""
 
 
 class EvidenceBundle(BaseModel):
@@ -304,3 +310,147 @@ def classification_distribution(results: Sequence[ClassificationResult]) -> dict
     for result in results:
         counts[str(result.subtype)] = counts.get(str(result.subtype), 0) + 1
     return counts
+
+
+# --- Slot A: the graded LLM classifier (§4.2, §4.3, §4.4, session 5.2). ---
+
+SUBTYPE_DEFINITIONS: dict[SubtypeLabel, str] = {
+    SubtypeLabel.SETTLEMENT_UTR_MISSING: (
+        "Settlement is processed but carries no UTR, so no bank-side anchor exists."
+    ),
+    SubtypeLabel.BANK_CREDIT_OVERDUE: "Settlement window has elapsed with no matching bank credit.",
+    SubtypeLabel.SETTLEMENT_AMOUNT_MISMATCH: (
+        "Settlement header amount does not equal the sum of its recon lines net of fees and tax."
+    ),
+    SubtypeLabel.UNMATCHED_INBOUND_CREDIT: (
+        "Bank credit with an identifiable counterparty but no Razorpay anchor."
+    ),
+    SubtypeLabel.REVERSAL_UNMATCHED: "Bank reversal with no matching prior credit in the batch.",
+    SubtypeLabel.DUPLICATE_CREDIT: "Same UTR credited twice on the bank statement.",
+    SubtypeLabel.DISPUTE_PENDING: "A payment carries a dispute/chargeback pending resolution.",
+    SubtypeLabel.AMBIGUOUS_CASE: (
+        "Evidence is insufficient or internally inconsistent so that no single defensible "
+        "treatment exists: several mutually exclusive readings fit the evidence, or a "
+        "required piece of evidence is absent. Separating question: do we know what "
+        "happened and who must act? If yes, one of the subtypes above. If no, this one."
+    ),
+}
+"""§3.3's subtype table and `AMBIGUOUS_CASE` definition, transcribed verbatim (word for
+word, not paraphrased) into the prompt. These sentences are what Slot A is graded
+against, so the model sees exactly the same test a human reviewer would apply — not a
+looser or tighter restatement of it."""
+
+_SLOT_A_JSON_SCHEMA: dict = {
+    "type": "object",
+    "properties": {"subtype": {"type": "string", "enum": [label.value for label in SubtypeLabel]}},
+    "required": ["subtype"],
+    "additionalProperties": False,
+}
+"""§4.3 layer 1: constrained decoding to the eight-value enum. Passed as Fireworks'
+`response_format` JSON schema (§4.4) — the output space is eight values even under
+provider-side nondeterminism, which is what bounds it rather than leaving it open."""
+
+_SLOT_A_INSTRUCTIONS = (
+    "You are classifying one reconciliation case for a settlement-accounting system. "
+    "The case has already failed to auto-close: no deterministic accounting correction "
+    "applies. Your only job is to assign the single subtype that best matches the "
+    "evidence below, from this fixed list:\n\n"
+    + "\n".join(f"- {label.value}: {SUBTYPE_DEFINITIONS[label]}" for label in SubtypeLabel)
+    + "\n\nYou never see or report an account code, a paise amount, or a ledger "
+    "narration — only the evidence fields given. Respond with JSON matching the given "
+    "schema: {\"subtype\": <one of the values above>}."
+)
+"""Fixed across every case — only the evidence blob varies — so the SHA-256 cache key
+in `build_slot_a_prompt` is driven entirely by case-specific evidence, and a prompt
+wording change (a deliberate edit, not a per-case accident) is what invalidates the
+whole cache at once."""
+
+
+def build_slot_a_prompt(bundle: EvidenceBundle) -> str:
+    """The exact, deterministic prompt string Slot A sends — and the exact string
+    `pipeline.llm_cache.cache_key` hashes. Two runs over the same batch produce the
+    same `EvidenceBundle` for a given case (§3.5/§3.6's populations are fixed by seed,
+    not redrawn), so the same case always hashes to the same cache entry.
+
+    Never includes `bundle.case_id`: two cases with identical evidence should read as
+    one cache entry, not two, and the boundary this bundle enforces (§4.2: "never sees
+    or emits an account, an amount, or a postable narration") extends to the prompt —
+    an internal case ID is bookkeeping, not evidence, and mixing it into the hashed
+    text would fragment the cache for no classification-relevant reason.
+    """
+    evidence = {
+        "case_kind": bundle.case_kind.value,
+        "fired_subtypes": [subtype.value for subtype in bundle.fired_subtypes],
+        "has_template_hit": bundle.has_template_hit,
+        "narrations": list(bundle.narrations),
+        "match_tier": bundle.match_tier,
+        "in_settlement_window": bundle.in_settlement_window,
+    }
+    return (
+        _SLOT_A_INSTRUCTIONS
+        + "\n\nEvidence:\n"
+        + json.dumps(evidence, sort_keys=True, ensure_ascii=True)
+    )
+
+
+class SlotAResponseError(RuntimeError):
+    """A Slot A response did not parse to a valid `SubtypeLabel`.
+
+    Should not happen under constrained decoding (`_SLOT_A_JSON_SCHEMA` fixes the
+    output to exactly these eight values) — this exists for the cache path, where a
+    committed entry could in principle be hand-edited or come from a differently
+    configured client, and a bad cached string should fail loudly rather than crash
+    on an `AttributeError` three frames away.
+    """
+
+
+def parse_slot_a_response(raw: str) -> SubtypeLabel:
+    """Parse one raw Fireworks (or cached) response string into a `SubtypeLabel`."""
+    try:
+        payload = json.loads(raw)
+        return SubtypeLabel(payload["subtype"])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        raise SlotAResponseError(f"could not parse a SubtypeLabel from Slot A response: {raw!r}") from exc
+
+
+def classify_case_llm(
+    bundle: EvidenceBundle,
+    cache: PromptCache,
+    *,
+    mode: CacheMode,
+    client: LLMClient | None = None,
+) -> ClassificationResult:
+    """One case through Slot A: cache lookup, then (only under `CacheMode.REFRESH`) a
+    real Fireworks call on a miss. `CacheMode.STRICT` never constructs a network path —
+    a miss is `CacheMissError`, per §4.3's "hard error rather than a fallthrough to the
+    API" — so a `client` is not even required when every case is already cached.
+    """
+    prompt = build_slot_a_prompt(bundle)
+    raw = cache.get(prompt)
+    if raw is None:
+        if mode is CacheMode.STRICT:
+            raise CacheMissError(
+                f"no cached Slot A response for case {bundle.case_id!r}; "
+                "run with --llm-cache=refresh to populate it"
+            )
+        if client is None:
+            raise ValueError("CacheMode.REFRESH on a cache miss requires a client")
+        raw = client.complete(prompt, response_schema=_SLOT_A_JSON_SCHEMA)
+        cache.put(prompt, raw)
+    return ClassificationResult(
+        case_id=bundle.case_id,
+        subtype=parse_slot_a_response(raw),
+        source=ClassificationSource.LLM_SLOT_A,
+    )
+
+
+def classify_batch_llm(
+    bundles: Sequence[EvidenceBundle],
+    cache: PromptCache,
+    *,
+    mode: CacheMode,
+    client: LLMClient | None = None,
+) -> list[ClassificationResult]:
+    """Slot A over a whole batch. See `classify_case_llm` — the same cache/mode/client
+    contract applies per case."""
+    return [classify_case_llm(bundle, cache, mode=mode, client=client) for bundle in bundles]
