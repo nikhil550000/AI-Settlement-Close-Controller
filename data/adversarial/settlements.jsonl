@@ -1,0 +1,6 @@
+{"id":"adv_setl_t01","amount":97640,"status":"processed","fees":2000,"tax":360,"utr":"ADVUTR0000000101","created_at":1787562000}
+{"id":"adv_setl_t03","amount":97640,"status":"processed","fees":2000,"tax":360,"utr":"ADVUTR0000000203","created_at":1787562000}
+{"id":"adv_setl_f4core","amount":48820,"status":"processed","fees":1000,"tax":180,"utr":"ADVUTR0000000304","created_at":1786957200}
+{"id":"adv_setl_f4date","amount":58584,"status":"processed","fees":1200,"tax":216,"utr":"ADVUTR0000000405","created_at":1787216400}
+{"id":"adv_setl_f4noop","amount":19528,"status":"processed","fees":400,"tax":72,"utr":"ADVUTR0000000506","created_at":1787907600}
+{"id":"adv_setl_clean","amount":39056,"status":"processed","fees":800,"tax":144,"utr":"ADVUTR0000001010","created_at":1787389200}
