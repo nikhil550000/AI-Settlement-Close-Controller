@@ -4,8 +4,8 @@
 **Build type:** Solo
 **Submission deadline:** September 5, 2026 — confirmed from the Buildathon page itself ("You have from today till 5 September"). **Internal ship target: September 3, 2026**, with Sept 4–5 held as contingency only. No work is planned into the contingency window.
 **Today:** August 27, 2026 — **7 days to internal ship target (Sept 3), 9 days to confirmed deadline (Sept 5)**
-**Spec version:** v0.8
-**Spec status:** Sections 1–6 locked. Sections 4 (architecture and tooling), 5 (evaluation methodology) and 6 (phase plan) written and locked in v0.5; §6.3 (session decomposition) and §6.4 (version control protocol) added in v0.6; §2.2's ledger-entry and raw-record-total estimates corrected in v0.7 (REV-23); §1.7.4's and §4.5's idempotency constraint widened to the leg in v0.8 (REV-24). Section 7 remains pending; §2.10 holds the non-goals list. Nine revisions to locked sections logged as REV-16 → REV-24. **Build starts Aug 28.**
+**Spec version:** v0.9
+**Spec status:** Sections 1–6 locked. Sections 4 (architecture and tooling), 5 (evaluation methodology) and 6 (phase plan) written and locked in v0.5; §6.3 (session decomposition) and §6.4 (version control protocol) added in v0.6; §2.2's ledger-entry and raw-record-total estimates corrected in v0.7 (REV-23); §1.7.4's and §4.5's idempotency constraint widened to the leg in v0.8 (REV-24); §3.6's and §5.2's macro-average subtype count corrected from six to seven in v0.9 (REV-25). Section 7 remains pending; §2.10 holds the non-goals list. Ten revisions to locked sections logged as REV-16 → REV-25. **Build starts Aug 28.**
 
 ---
 
@@ -707,7 +707,7 @@ No second realistic-mix batch is generated. It would double generator work for a
 | `ABSTAINED` | 17 | 11.3% |
 | **Total** | **150** | |
 
-Every FR-04 family holds 10 cases. Every `OPERATIONAL_EXCEPTION` subtype holds at least 3, and the six subtypes divide 36 cases at roughly 6 each — thin, and stated as such: Section 5 must report `exception_subtype_precision` and `exception_subtype_recall` (1.6, REV-20) with their per-subtype denominators visible rather than as a single headline number.
+Every FR-04 family holds 10 cases. Every `OPERATIONAL_EXCEPTION` subtype holds at least 3, and the seven subtypes divide 36 cases at roughly 5 each *(corrected in REV-25 — v0.8 said six, which cannot sum to 36)* — thin, and stated as such: Section 5 must report `exception_subtype_precision` and `exception_subtype_recall` (1.6, REV-20) with their per-subtype denominators visible rather than as a single headline number.
 
 ## 4. Architecture and tooling
 
@@ -831,7 +831,7 @@ Both development and held-out metrics are reported side by side. **A gap between
 - **`exception_subtype_precision`** *(renamed from `exception_classification_accuracy`)* — among cases the system assigned subtype S, the fraction whose ground-truth subtype is S.
 - **`exception_subtype_recall`** *(new — this is the counterpart §2.11 asked for)* — among cases whose ground-truth subtype is S, the fraction the system assigned S.
 
-**Both MUST be reported per subtype with denominators visible, plus a macro average across the seven subtypes.** §3.6 already requires this: six subtypes divide 36 cases at roughly six each, and a single headline number over denominators that thin would be dishonest.
+**Both MUST be reported per subtype with denominators visible, plus a macro average across the seven subtypes.** §3.6 already requires this: seven subtypes divide 36 cases at roughly five each *(corrected in REV-25)*, and a single headline number over denominators that thin would be dishonest.
 
 Two additions, both cheap and both directly on the judging bar:
 
@@ -1230,3 +1230,22 @@ The invariant itself is correct and achievable — "reprocessing the same case c
 **Verified before adopting.** No template in §3.4 posts the same account twice within one entry, so `account_code` separates the legs of every one of the six without collision. A second run of the same batch re-mints the identical `(case_id, resolution_id, account_code)` triple for every leg and is rejected leg-for-leg, which is the behaviour §6.3's session-4.3 checkpoint ("running the same batch twice posts nothing on the second pass") asks for.
 
 **Alternatives considered and rejected.** Making `resolution_id` itself per-leg (`"T-01:5010"`) keeps the DDL untouched but revises §3.4's sentence instead and leaves no single id naming one correcting entry in the audit trail (§1.8). A separate `resolution` header table carrying the constraint is the textbook data model and would keep §1.7.4 literally true, but adds a table the spec names nowhere. The widened constraint changes only the thing that is actually wrong.
+### REV-25 — macro-average subtype count corrected to seven *(v0.9, Aug 28, 2026 — revises locked §3.6 and §5.2)*
+
+**Issue.** The macro-average denominator for `exception_subtype_precision` and `exception_subtype_recall` is stated two ways in locked text, and one of them is arithmetically impossible.
+
+- §1.6, §5.2's own headline sentence, and REV-20's change text all require "a macro average across the **seven** subtypes."
+- §3.6's Batch-totals note says "the **six** subtypes divide 36 cases at roughly 6 each," and §5.2 restates that clause as its authority in the same paragraph in which it says seven.
+
+§3.3 lists six `OPERATIONAL_EXCEPTION` subtypes in a table and then names `DISPUTE_PENDING` "a seventh subtype." §3.5's and §3.6's population tables divide the 36 `EXTERNAL_ACTION_REQUIRED` cases across all seven: `SETTLEMENT_UTR_MISSING` 5, `BANK_CREDIT_OVERDUE` 5, `SETTLEMENT_AMOUNT_MISMATCH` 4, `DISPUTE_PENDING` 5, `UNMATCHED_INBOUND_CREDIT` 8, `REVERSAL_UNMATCHED` 6, `DUPLICATE_CREDIT` 3. Read as excluding `DISPUTE_PENDING` — the only reading §3.3's "a seventh subtype" phrasing supports — the six tabled subtypes cover 31 cases, not 36, so the sentence is false on its own terms under either count.
+
+This is not cosmetic. A macro average is an unweighted mean over per-subtype values, so including or excluding `DISPUTE_PENDING`'s five cases moves the headline figure for the one graded LLM slot (§4.2 Slot A) by up to a seventh, against §5.5's provisional bands (`exception_subtype_recall` macro 0.70–0.85, `exception_subtype_precision` macro 0.75–0.90). It is the same defect class REV-01 and REV-09 corrected, which is why §6.3 assigns session 6.1 to the strongest model.
+
+**Change.** The normative statements stand unaltered — the macro average is across the **seven** `OPERATIONAL_EXCEPTION` subtypes, `DISPUTE_PENDING` included. Two descriptive restatements are corrected to match:
+
+- §3.6's Batch-totals note: "the six subtypes divide 36 cases at roughly 6 each" becomes "the seven subtypes divide 36 cases at roughly 5 each."
+- §5.2's supporting clause: "six subtypes divide 36 cases at roughly six each" becomes "seven subtypes divide 36 cases at roughly five each."
+
+No case count, population, template, chart-of-accounts entry, invariant, metric definition, or threshold changes. §3.6's neighbouring claim that every subtype holds at least 3 remains true of all seven (`DUPLICATE_CREDIT` is the minimum at 3). §3.3's subtype list is untouched: it already defines seven, six in a table plus `DISPUTE_PENDING` named in the sentence beneath it.
+
+**Alternatives considered and rejected.** Reading "six" as normative and holding `DISPUTE_PENDING` out of the macro would require revising three separate normative sentences (§1.6, §5.2's headline, REV-20's change text) plus §3.6's own "36 cases," and would leave five graded cases scored per-subtype but absent from the headline they belong in. Reporting both a macro-6 and a macro-7 avoids a revision but ships two headline numbers against §5.5's single provisional band, moving the ambiguity from the denominator to the target.
