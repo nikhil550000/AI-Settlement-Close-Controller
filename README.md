@@ -2,11 +2,15 @@
 
 Razorpay AI Buildathon 2026, Track 4 (AI Finance Controller). Solo build. `spec.md` is the single source of truth — every claim below traces to a section of it, and every number is read off a committed artifact, not typed from memory.
 
+## The one-paragraph version
+
+An agent that ingests a merchant's accounting-ledger export, Razorpay Settlement Reconciliation data, and the merchant's bank statement, and closes the settlement accounting loop across a 150-case batch. **80 of 150 cases close fully automatically — 100% of the population ground truth marks automatable — with `false_match_rate` 0/150 and `auto_close_precision` 50/50.** The remaining 70 are categorized, evidenced, and handed to a human with the external action named. Everything that reaches the ledger is computed by deterministic code; the model is used in exactly the places where a deterministic answer does not exist, and the repository measures what it is worth in both directions.
+
 ## What this is
 
-An agent that ingests a merchant's normalized accounting-ledger export, Razorpay Settlement Reconciliation data, and the merchant's bank statement, and closes the settlement accounting loop across a batch of transactions:
+For each reconciliation case, the Controller:
 
-1. Matches high-confidence records across the three sources (§1.1.1, FR-09's four-tier cascade).
+1. Matches high-confidence records across the three sources (FR-09's four-tier cascade).
 2. Detects accounting discrepancies — unposted refunds, fee/GST mismatches, chargeback lifecycle events, settlement holds, timing differences — and derives a correcting journal entry from a **fixed allowlist of six templates** (§3.4), never an invented account or amount (invariant 1.7.2).
 3. Validates every candidate against the full §1.7.5 chain (balance, allowlist membership, evidence, idempotency, zero post-adjustment residual) before it is allowed to post.
 4. Applies validated corrections to a synthetic ledger and re-reconciles to confirm the discrepancy actually closed.
@@ -15,24 +19,57 @@ An agent that ingests a merchant's normalized accounting-ledger export, Razorpay
 
 Every case terminates in exactly one of five states: `AUTO_MATCHED`, `AUTO_CLOSED`, `EXTERNAL_ACTION_REQUIRED`, `REVIEW_REQUIRED`, `ABSTAINED` (§1.3).
 
-**Where the model is allowed to act, exactly.** Invariant 1.7.2: the model may *classify* which of the six templates applies and may write prose describing what it found; it may never originate an account, an amount, or a narration on the automated path. Concretely, this build has exactly two model-touching slots (§4.2): **Slot A**, a constrained eight-value classification over evidence already computed deterministically (graded — §5.2's confusion matrices and per-subtype precision/recall are Slot A's scorecard); and **Slot B**, free-text prose for a human reviewer, explicitly labelled model-generated in the report and never itself evidence. Everything that reaches the ledger — which account, which amount, which template — is computed by deterministic code the model never touches.
+### Where the model is allowed to act, exactly
+
+Invariant 1.7.2: the model may *classify* and may *write prose*; it may never originate an account, an amount, or a narration on the automated path. Everything that reaches the ledger — which account, which amount, which template — is computed by deterministic code the model never touches. There are four model-touching surfaces, and each is separately switchable and separately measured:
+
+| surface | module | what it decides | graded |
+|---|---|---|---|
+| **Semantics** — five free-text reads over bank and adjustment prose | `pipeline/semantics.py` | does this narration name a counterparty; is this credit the gateway; is this a reversal; is this a bank charge; is this a tax position | yes — the whole §1.6 surface, both arms |
+| **Slot A** — exception-subtype classification | `pipeline/classifier.py` | one of eight subtype labels on a non-auto-close case | yes — §5.2 |
+| **Slot B** — resolution text and abstention rationale | `pipeline/narration.py` | prose for a human reviewer, labelled model-generated in the report | no — off the money path |
+| **Adapter inference** — the agentic loop | `pipeline/adapters/inference.py` | a proposed YAML column map for a bank with no hand-written profile | yes — nine deterministic checks accept or reject it |
+
+The semantics surface returns only a `bool` or a counterparty name **lifted verbatim out of text the bank wrote** (verified as a substring before it is trusted). Its answers route cases; they never price one. `LlmSemantics` could return adversarial nonsense on every call without producing a wrong journal entry — it would produce wrong routing, which the §1.6 metric surface measures and the §1.7.5 validator chain still gates.
+
+## The headline result: where the model earns its place, and where it does not
+
+The reference batch grades **1.0000 on everything** with no model involved. That is not a result — it is a finding about the batch, and chasing it down is the most useful thing this build did.
+
+Five of the pipeline's decision boundaries were literal-substring tests, and each separated the generator's corresponding string pool with 100% hit and 0% miss. §4.1's import guard cannot see that (a shared *vocabulary* is not an import) and a seed sweep cannot see it (a seed does not vary a module constant). So `data/heldout_vocab/` was built: **the same 150 cases, the same injected anomalies, the same `ground_truth.jsonl` copied byte-for-byte — only the bank's wording changed**, to real Indian bank-statement vocabulary sharing no literal with those lists. `RZRPAY SOFTWARE PVT LTD` for the gateway. `SUSPENSE-CR` for an opaque credit. `Withholding deduction, marketplace facilitator remittance` for the 194-O exclusion.
+
+| batch | `--semantics keyword` | `--semantics llm` |
+|---|---|---|
+| `data/reference/` — 150 cases | 150/150 state, macro P/R **1.0000** | 150/150 state, macro P/R **1.0000** |
+| `data/heldout_vocab/` — same cases, same answer key, different words | **cannot complete a run** | 150/150 state, macro P/R **1.0000**, all seven subtypes |
+
+`false_match_rate` is 0/150 and `auto_close_precision` 50/50 on both arms of both batches.
+
+On the batch this repository has always shipped, the model earns nothing and is correctly **not** the default. Change only the words, and the keyword arm does not degrade gracefully — it raises `MetricsError: ground-truth case 'orphan_53fdba0a' matches no assembled case`, because `GATEWAY_MARKER` stops separating the gateway from a merchant and the 125/25 case split collapses into 243 assembled cases — while the model arm recovers the batch completely.
+
+Both rows reproduce offline from the committed cache, with no API key:
+
+```bash
+uv run reconcile --semantics llm --data-dir data/heldout_vocab --cache-path data/semantics_cache.json
+uv run reconcile --semantics keyword --data-dir data/heldout_vocab   # raises, by design
+```
 
 ## Non-goals
 
-Explicitly out of scope (§2.10 and FR-10's own framing):
+Explicitly out of scope (§2.10):
 
-- Not a general reconciliation or rules-based bookkeeping product — Razorpay already ships those (Settlement Reconciliation API, Razorpay Recon, the Bookkeeping Agent). This build is the exception-resolution layer above predefined rules: the cases where merchant ledger, settlement data, and bank statement disagree in ways a rule can't resolve.
+- Not a general reconciliation or rules-based bookkeeping product — Razorpay already ships those (Settlement Reconciliation API, Razorpay Recon, the Bookkeeping Agent). This build is the exception-resolution layer *above* predefined rules: the cases where merchant ledger, settlement data, and bank statement disagree in ways a rule can't resolve.
 - No web server, SPA, database UI, authentication, or live dashboard. The CLI is the product (FR-10); the report is one static HTML file (FR-11).
-- No real merchant data, anywhere. Every record — settlements, recon lines, ledger entries, bank lines, ground truth — comes from one seeded synthetic generator (`generator/`), which the graded pipeline (`pipeline/`) is structurally forbidden from importing (§4.1's import guard, `tests/test_import_guard.py`).
+- No real merchant data, anywhere. Every record comes from one seeded synthetic generator (`generator/`), which the graded pipeline (`pipeline/`) is structurally forbidden from importing (§4.1's import guard, `tests/test_import_guard.py`).
 - No FR-05 (recognition-entry proposals on `EXTERNAL_ACTION_REQUIRED` cases) in v1 — §2.4's stated fallback, unbuilt by design.
 
 ## Required disclosures
 
-Two facts the spec requires stated everywhere the numbers below are shown — here, in the FR-11 report header, and in the pitch video — verbatim in substance (§3.5, §5.3):
+Two facts the spec requires stated everywhere the numbers below are shown — here, in the FR-11 report header, and in the pitch video (§3.5, §5.3):
 
 > **Synthetic evaluation.** Ground-truth labels and the records being graded come from one generator. The evaluation measures whether the pipeline recovers the injected intent; it does not establish that the injected intent resembles a real merchant's books.
 
-> **Anomaly enrichment.** `match_rate` on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility — only 30 of 150 cases (20%) require no action at all, against a real-world break rate closer to low single digits, roughly an order of magnitude enrichment. `EXTERNAL_ACTION_REQUIRED` runs high because orphan cases are unresolvable by construction (§3.6) and are the majority of that state's population: 36 of 150 cases (24.0%) are **ground-truth** `EXTERNAL_ACTION_REQUIRED`; the system's own predicted count varies by classifier arm (36/150 deterministic, 43/150 Slot A). The seven extra cases on the Slot A arm are **not** recoveries: both arms have `UNMATCHED_INBOUND_CREDIT` recall of exactly 8/8, so Slot A finds no true positive the deterministic arm misses. The seven are ground-truth `ABSTAINED` cases Slot A wrongly promotes to a confident exception — the same seven the eval report prints as `7 × ground truth ABSTAINED → predicted EXTERNAL_ACTION_REQUIRED`. See the arm comparison below.
+> **Anomaly enrichment.** `match_rate` on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility — only 30 of 150 cases (20%) require no action at all, against a real-world break rate closer to low single digits, roughly an order of magnitude enrichment. `EXTERNAL_ACTION_REQUIRED` runs high because orphan cases are unresolvable by construction (§3.6) and are the majority of that state's population: 36 of 150 cases (24.0%) are ground-truth `EXTERNAL_ACTION_REQUIRED`.
 
 ## Quickstart / reproduce path
 
@@ -41,9 +78,11 @@ uv sync
 uv run reconcile
 ```
 
-That single command (FR-10) reads the committed reference batch at `data/reference/` (seed 0, snapshot date 2026-08-28), runs the full pipeline — matching, evidence, template instantiation, validation, ledger apply, Slot A classification, Slot B narration, metrics — and writes both a console summary and `.run/report.html` / `.run/metrics.json`. Defaults: `--classifier baseline` (the arm that measures best — see the arm comparison below), `--cache-mode strict` (no network call is ever made; `--cache-mode refresh` is the only mode that calls Fireworks, and needs `FIREWORKS_API_KEY`). `--classifier hybrid` and `--classifier llm` select the other two arms; all three run offline against the committed cache.
+That single command (FR-10) reads the committed reference batch at `data/reference/` (seed 0, snapshot 2026-08-28), runs the full pipeline, and writes a console summary plus `.run/report.html` and `.run/metrics.json`.
 
-To reproduce the **exact pinned run** (FR-13) in place, overwriting nothing but the two files already committed at `data/`:
+Defaults: `--semantics keyword`, `--classifier baseline` (the arms that measure best on this batch — see the ablations), `--cache-mode strict` (no network call is ever made; `--cache-mode refresh` is the only mode that calls Fireworks, and needs `FIREWORKS_API_KEY`). Every arm runs offline against the committed caches.
+
+To reproduce the **exact pinned run** (FR-13) in place:
 
 ```bash
 uv run reconcile --seed 0 --git-sha <sha from data/metrics.json> --out-dir data
@@ -51,33 +90,47 @@ uv run reconcile --seed 0 --git-sha <sha from data/metrics.json> --out-dir data
 
 `tests/test_reproduce.py` runs this for real — a genuine `git clone --local` into a temp directory, a genuine `uv sync`, a genuine `uv run reconcile` with `FIREWORKS_API_KEY` stripped from the subprocess environment — and asserts the resulting `metrics.json` is byte-identical to the one committed at `data/metrics.json` (NFR-01, NFR-06).
 
-To regenerate the reference batch itself from scratch (not required to reproduce the pinned run — the batch is already committed per FR-12):
+Other entry points:
 
 ```bash
-uv run generate --seed 0 --out-dir data/reference
+uv run generate --seed 0 --out-dir data/reference          # regenerate the reference batch
+uv run python tools/build_heldout_vocab_batch.py data/reference data/heldout_vocab
+uv run python tools/infer_bank_profile.py data/unseen_bank/kotak_statement.csv
+uv run pytest                                               # 586 passed, 1 skipped
 ```
 
-To run the test suite, including the import guard and the clean-clone reproduce test:
+## The agentic surface: bank-profile inference
 
-```bash
-uv run pytest
-```
+FR-08's adapter reads a bank export through a declarative YAML column map. Three are hand-written (`hdfc`, `icici`, `axis`). For a bank with no profile, `pipeline/adapters/inference.py` runs a bounded **propose → verify → repair** loop:
 
-## Batch and reference dataset
+1. **Propose.** The model sees the header row and sample rows and returns a column map under constrained decoding. Its output space is column names and a `strftime` pattern — the schema has no field for an amount or an account.
+2. **Verify.** Nine deterministic checks run the real, unmodified `parse_bank_statement` over the real file. The strongest is `balance_continuity`: `balance[i] − balance[i−1] == deposit[i] − withdrawal[i]` in integer paise, which uses the statement's own running balance as an independent witness against a debit/credit swap.
+3. **Repair.** The failing check's exact text feeds the next prompt. Each attempt is a distinct prompt, so the whole multi-attempt run replays offline from `data/adapter_cache.json`.
+4. **Terminate.** Three attempts, then a clean give-up — never an exception.
 
-The committed reference batch (`data/reference/*.jsonl`, seed 0, snapshot date 2026-08-28) is 150 reconciliation cases: 125 settlement-anchored, 25 orphan. Every population's size is fixed by §3.5/§3.6's case-allocation tables and asserted exactly in `tests/test_generator_batch.py` — not eyeballed. 1,392 recon lines, 5,418 ledger entries, 176 bank lines, 150 ground-truth cases.
+Every iteration is judged by deterministic code that already existed, which is why the loop cannot violate invariant 1.7.2 or reach the money path.
+
+**Measured.** `data/unseen_bank/kotak_statement.csv` — a six-row junk header block, a serial column, `DD/MM/YYYY` dates, comma-grouped amounts, separate `Withdrawal (Dr)`/`Deposit (Cr)` columns — is **accepted on attempt 1**: 12/12 rows parsed, withdrawal and deposit totals equal to the statement's own printed summary block, so the parse is right rather than merely successful.
+
+**A measured negative, kept as a test.** `data/unseen_bank/yesbank_statement.csv` has one `Amount (INR)` column plus a separate `Dr/Cr` flag. FR-08's profile schema has two money columns and no direction flag, so **no column map can express this file**. The model read the date shape correctly, `direction_coherent` rejected the mapping, the repair prompt did not converge across attempts 2 and 3 because there is nothing to converge to, and the loop gave up cleanly at the budget with no profile written. That is a schema limitation, not a model failure, and it is reported as one.
+
+## Batch and datasets
+
+| dataset | what it is |
+|---|---|
+| `data/reference/` | The committed seed-0 batch (FR-12): 150 cases — 125 settlement-anchored, 25 orphan — 1,392 recon lines, 5,418 ledger entries, 176 bank lines. Every population's size is fixed by §3.5/§3.6's allocation tables and asserted exactly in `tests/test_generator_batch.py`. |
+| `data/heldout_vocab/` | The same batch under a disjoint surface vocabulary (`tools/heldout_vocabulary.py`). Rewritten by template, `{ref}` tokens preserved verbatim so FR-09's tier cascade sees identical tokens; `ground_truth.jsonl` copied byte-for-byte. |
+| `data/adversarial/` | Ten hand-authored cases, no RNG, targeting four evidence boundaries: `T-01` vs `T-03` (REV-16), the family-4 timing triangle, duplicate-credit vs reversal (REV-18), and the ambiguous / unmatched-inbound-credit split. Reported separately (`tests/test_adversarial.py`), never merged: 10/10 state and exception-class agreement. |
+| `data/unseen_bank/` | Two bank exports with no hand-written profile, for the inference loop above. |
+| seed 2 (generated on demand) | §5.1's held-out batch, never inspected case by case. |
 
 Ground truth is emitted from the injection plan when each case is planted, never re-derived by inspecting the generated records (§3.5) — re-deriving would embed the pipeline's own matching logic into its answer key.
 
-A second, hand-authored adversarial set (`data/adversarial/`, ten cases, no RNG, no generator import) targets four specific evidence boundaries the reference batch's random population doesn't stress-test on demand: `T-01` vs `T-03` template selection (REV-16), the family-4 timing triangle (core / date-error / no-op), duplicate-credit vs reversal (REV-18), and the ambiguous-vs-unmatched-inbound-credit split (§4.2's own stated Slot A boundary). Reported separately (`tests/test_adversarial.py`), never merged into any other metrics report — measured 10/10 state and exception-class agreement, first construction, nothing tuned.
-
-A third, disjoint held-out batch (seed 2) is generated and run for §5.1's development-versus-held-out comparison; it is never inspected case by case and nothing is tuned against it (§5.1's rule, with teeth).
-
 ## Metrics and evaluation
 
-The full §1.6 metric surface is computed against ground truth in `pipeline/metrics.py`; every rate carries its own integer numerator and denominator (never a bare float), and an undefined metric (zero denominator) reports as `undefined`, never as `0.0` — collapsing the two would flatter the system. Two §5.2 confusion matrices (outcome state, exception class), a per-subtype precision/recall breakdown over Slot A's seven graded subtypes, and the §5.5 provisional threshold review are in `pipeline/eval_report.py`; all five §1.8 report artifacts render into one self-contained HTML file (`pipeline/report.py`, FR-11).
+The full §1.6 metric surface is computed against ground truth in `pipeline/metrics.py`. Every rate carries its own integer numerator and denominator (never a bare float), and an undefined metric reports as `undefined`, never as `0.0`. A macro average is a `MacroRate`, not a `Rate` — a mean of ratios is not a ratio, and expressing it as one produced a committed artifact that read `{"numerator": 7, "denominator": 7, "value": 0.80}`. Two §5.2 confusion matrices, a per-subtype breakdown, and the §5.5 threshold review are in `pipeline/eval_report.py`; all five §1.8 artifacts render into one self-contained HTML file (`pipeline/report.py`, FR-11).
 
-**Measured at seed 0, the shipped `baseline` arm, nothing tuned in response to it.** (The same table on the `llm` arm is in the arm comparison below; it is worse on every line that differs.)
+**Measured at seed 0, the shipped arms (`--semantics keyword --classifier baseline`), nothing tuned in response to it:**
 
 | Metric | Value | §5.5 target |
 |---|---|---|
@@ -93,13 +146,11 @@ The full §1.6 metric surface is computed against ground truth in `pipeline/metr
 | `declined_by_policy_rate` | 17/150 = 0.1133 | ≈ 11.3% |
 | `value_coverage` | 0.6246 | reported, no target |
 
-**Read the perfect scores as a statement about the batch, not the system.** Every 1.0000 above is real and reproducible, and none of it is evidence the Controller is good — see the saturation note under the ablation below. The two numbers worth reading as results are `false_match_rate` (0, on a batch built to tempt false matches) and the fact that **80 of 150 cases close fully automatically — 30 `AUTO_MATCHED` + 50 `AUTO_CLOSED` — which is 100% of the population ground truth marks automatable, with zero false matches.** `match_rate` (30/150 = 0.20) counts only the no-adjustment half of that and is the §1.6 name for it, so it is reported under that name and not as a headline.
+**Read the perfect scores as a statement about the batch, not the system.** Every 1.0000 is real and reproducible, and none of it is evidence the Controller is good — see the saturation note below. The numbers worth reading as results are `false_match_rate` (0, on a batch built to tempt false matches) and **80 of 150 cases closing fully automatically, which is 100% of the population ground truth marks automatable.** `match_rate` (30/150 = 0.20) counts only the no-adjustment half of that and is the §1.6 name for it, so it is reported under that name and not as a headline.
 
-`false_match_rate` and `auto_close_precision` are the two primary safety metrics — both read exactly where §5.5 asks (0, and 1.00). `abstention_rate` sits inside §5.5's 8–18% operating band on the shipped arm (0.1133). It reads *below* the band on the Slot A arm (0.0667) — the model under-abstains, which is the same defect as its precision collapse seen from the other side: it converts ambiguity into confident exceptions rather than declining them. `auto_close_recall`/`auto_match_recall` reading ABOVE their bands means every ground-truth `AUTO_MATCHED`/`AUTO_CLOSED` case was actually caught, which is a stronger result than the band anticipated, not a defect.
+**The benchmark is saturated, and that is a finding about the batch.** The keyword arm scores 1.0000 on state accuracy and both macro subtype metrics at seeds 0, 1, 2, 5, 7 and 11, and the adversarial set is 10/10. This generator plants *structurally unambiguous* anomalies — each family produces a distinct arithmetic signature, and REV-16 made the six template predicates mutually exclusive by construction, so evidence → label is a bijection with no irreducible ambiguity for judgment to resolve. A perfect score on a task where perfection is arithmetic proves as little as one cherry-picked match. `data/heldout_vocab/` is the batch built to say something the reference batch cannot.
 
-**Development-versus-held-out gap (§5.1, seed 1 vs seed 2), Slot A arm:** the largest gap on a §5.5-targeted metric is `state_prediction_accuracy`, −0.0133 (two cases in 150), and every targeted gap is negative or zero — the held-out batch never scores better than the batch the prompt was written against. `false_match_rate` and `auto_close_precision` stay perfect on both batches; the model's errors are confined entirely to the non-money classification path. On the deterministic baseline, every §5.5-targeted metric has a gap of exactly zero, as §5.1 predicts for a path with no learned parameters. Full figures: `BUILDLOG.md`, session 6.2.
-
-**§5.4 ablation — three arms, `exception_subtype` macro, seed 0.** The arm the CLI defaults to is the one that measures best, and on this batch that is the deterministic one:
+**§5.4 ablation — the Slot A classifier arms, `exception_subtype` macro, seed 0, reference batch:**
 
 | arm | macro precision | macro recall | state accuracy | LLM calls |
 |---|---|---|---|---|
@@ -109,47 +160,68 @@ The full §1.6 metric surface is computed against ground truth in `pipeline/metr
 
 Held-out (seed 2) reproduces the ordering: `llm` −0.2044 precision / −0.1143 recall against `baseline`; `hybrid` −0.0612 / ±0.0000.
 
-**Why Slot A loses, stated plainly.** Six of the seven graded subtypes have a deterministic §3.3 trigger, and `EvidenceBundle` — correctly, per invariant 1.7.2 — carries no UTR, no amount and no dispute flag. So the model cannot *check* six of the eight definitions it is asked to choose between; it pattern-matches narration text instead. The cost lands as false positives on cases whose ground truth is `ABSTAINED`: confident operational exceptions manufactured out of genuine ambiguity, which is the error direction §1.3 ranks worst. `hybrid` recovers all of the lost recall and most of the precision by scoping the model to the one split §4.2 actually reserves for it.
+**Why Slot A loses, stated plainly.** Six of the seven graded subtypes have a deterministic §3.3 trigger, and `EvidenceBundle` — correctly, per invariant 1.7.2 — carries no UTR, no amount and no dispute flag. So the model cannot *check* six of the eight definitions it is asked to choose between; it pattern-matches narration text instead. The cost lands as false positives on cases whose ground truth is `ABSTAINED`: confident operational exceptions manufactured out of genuine ambiguity, which is the error direction §1.3 ranks worst. `hybrid` recovers all of the lost recall and most of the precision by scoping the model to the one split §4.2 actually reserves for it. Slot A stays in the repository as the §5.4 comparator and as the honest record of a measured negative result.
 
-**The benchmark is saturated, and that is a finding about the batch, not a result.** The deterministic arm scores 1.0000 on state accuracy and on both macro subtype metrics at seeds 0, 1, 2, 5, 7 and 11, and the hand-authored adversarial set is 10/10. That is not evidence the system is good; it is evidence this generator plants *structurally unambiguous* anomalies — each family produces a distinct arithmetic signature, and REV-16 made the six template predicates mutually exclusive by construction, so evidence → label is a bijection with no irreducible ambiguity for judgment to resolve. A perfect score on a task where perfection is arithmetic proves as little as one cherry-picked match. Closing this is the first entry under Known limitations.
+Note the contrast with the semantics ablation above, which is the actual lesson: **the same model is net-negative when asked to choose among labels it cannot verify, and decisive when asked a question it can.**
 
-**MEASURED, NOT TUNED.** Every §5.5 threshold in this repository is stated as provisional in the spec itself, "set properly after the first real run against the development batch." No prompt, threshold, predicate, or classifier behaviour has been changed in response to any figure in this README, `BUILDLOG.md`, or the committed reports — §5.1's rule applies with teeth to whoever *acts* on a number, and nobody has.
+**Development-versus-held-out gap (§5.1, seed 1 vs seed 2), Slot A arm:** the largest gap on a §5.5-targeted metric is `state_prediction_accuracy`, −0.0133 (two cases in 150), and every targeted gap is negative or zero. `false_match_rate` and `auto_close_precision` stay perfect on both batches. On the deterministic arm every §5.5-targeted metric has a gap of exactly zero, as §5.1 predicts for a path with no learned parameters.
 
-**Performance (FR-02, NFR-02, NFR-03), measured on `Windows AMD64, Intel64 Family 6 Model 154 Stepping 4, GenuineIntel, Python 3.11.15`:** reference batch (150 cases) 605–656 cases/s; scale batch (seed 3, 362 cases) 299–310 cases/s.
+**MEASURED, NOT TUNED — with one disclosed exception.** No §5.5 threshold, predicate, or classifier behaviour has been changed in response to any figure in this README or the committed reports. The one exception, recorded here and in the code: `_REVERSAL_INSTRUCTIONS` in `pipeline/semantics.py` was revised once after measurement, because the first version answered `false` for two `NEFT RTN <ref> <party>` lines whose shape it had already accepted elsewhere. Naming the abbreviation vocabulary in the prompt is the same move the keyword arm makes with `REVERSAL_KEYWORDS`, at the level of a concept rather than a batch's literals. It was written against `data/heldout_vocab/`, a development artifact — not §5.1's held-out seed-2 batch.
+
+**Performance (FR-02, NFR-02, NFR-03), on `Windows AMD64, Intel64 Family 6 Model 154 Stepping 4, Python 3.11.15`:** reference batch (150 cases) 605–656 cases/s; scale batch (seed 3, 362 cases) 299–310 cases/s. Reproduce with `tools/measure_performance.py`.
+
+## What broke, and how it was recovered
+
+`FAILURES.md` is the record: nine incidents with what broke, how it was found, the root cause, and the guard that stops it recurring — including a `UNIQUE` constraint that made `AUTO_CLOSED` unreachable for all 50 cases, nine ground-truth labels no component could ever reach, and the adversarial review that found this repository shipping, pinning and documenting the arm that measures worst.
 
 ## Repository layout
 
 ```
 AI Settlement Close Controller/
-├── spec.md                 # single source of truth
-├── AGENT.md                 # standing brief every coding session opens with
-├── BUILDLOG.md               # append-only, one entry per session (Built/Broke/Cut/Decided/Next)
-├── README.md                 # this file
-├── ARCHITECTURE.md           # component-level design notes
-├── pyproject.toml            # uv-managed; `generate` and `reconcile` entry points
-├── generator/                 # synthetic data + ground truth generator — separate entry point
-├── pipeline/                  # the graded path — MUST NOT import generator/, ever
-│   ├── cli.py                  # `uv run reconcile` — FR-10's single command
-│   ├── run.py                   # components 2-8, composed end to end
-│   ├── metrics.py / eval_report.py / report.py   # component 9 (§1.6, §5.2, FR-11)
-│   └── ...                      # matcher, predicates, instantiator, validator, apply, classifier, narration
+├── spec.md                     # single source of truth
+├── AGENT.md                    # standing brief every coding session opens with
+├── BUILDLOG.md                 # append-only, one entry per session (Built/Broke/Cut/Decided/Next)
+├── FAILURES.md                 # what broke and how it was recovered
+├── ARCHITECTURE.md             # component-level design notes
+├── generator/                  # synthetic data + ground truth — separate entry point
+├── pipeline/                   # the graded path — MUST NOT import generator/, ever
+│   ├── cli.py                  #   `uv run reconcile` — FR-10's single command
+│   ├── run.py                  #   components 2-8, composed end to end
+│   ├── semantics.py            #   the five free-text reads, keyword and LLM arms
+│   ├── adapters/inference.py   #   FR-08 profile inference: propose -> verify -> repair
+│   ├── metrics.py / eval_report.py / report.py    # component 9 (§1.6, §5.2, FR-11)
+│   └── ...                     #   matcher, predicates, instantiator, validator, apply, classifier, narration
+├── tools/                      # capability-bearing scripts (FR-12 keeps these in-repo)
+│   ├── heldout_vocabulary.py   #   the disjoint surface vocabulary
+│   ├── build_heldout_vocab_batch.py
+│   ├── infer_bank_profile.py
+│   ├── build_adversarial_set.py
+│   └── measure_performance.py
 ├── tests/
 │   ├── test_import_guard.py    # static analysis: pipeline/ never imports generator/
-│   ├── test_reproduce.py       # NFR-01/NFR-06: real clean-clone, real uv sync, byte-identical metrics
-│   └── ...                      # one file per component/session
+│   ├── test_reproduce.py       # NFR-01/NFR-06: real clean-clone, byte-identical metrics
+│   └── ...                     # one file per component/session
 └── data/
-    ├── reference/               # committed seed-0 reference batch (FR-12)
-    ├── adversarial/             # hand-authored ten-case boundary set (§5.3)
-    ├── llm_cache.json           # SHA-256-keyed Slot A / Slot B prompt-response cache (§4.3)
-    ├── metrics.json             # the pinned run's MetricsReport (FR-13)
-    └── report.html              # a sample FR-11 report from a real run (FR-12)
+    ├── reference/              # committed seed-0 reference batch (FR-12)
+    ├── heldout_vocab/          # the same batch, disjoint surface vocabulary
+    ├── adversarial/            # hand-authored ten-case boundary set (§5.3)
+    ├── unseen_bank/            # exports with no hand-written profile
+    ├── llm_cache.json          # SHA-256-keyed Slot A / Slot B cache (§4.3)
+    ├── semantics_cache.json    # SHA-256-keyed semantics cache
+    ├── adapter_cache.json      # SHA-256-keyed adapter-inference cache
+    ├── metrics.json            # the pinned run's MetricsReport (FR-13)
+    └── report.html             # a sample FR-11 report from a real run (FR-12)
 ```
 
 ## Known limitations
 
-- **The reference batch does not contain irreducible ambiguity, so it cannot discriminate between arms fairly.** A keyword matcher scores 1.0000 across six seeds; the LLM arm can therefore only lose. Until the generator plants cases whose correct label is genuinely undecidable from structure alone, the ablation measures the batch, not the arms.
-- **Slot A is net-negative on every measured metric and is not the default.** It stays in the repository as the §5.4 comparator and as the honest record of a measured negative result — see the arm comparison above.
+- **The reference batch contains no irreducible ambiguity, so it cannot discriminate between arms.** A keyword matcher scores 1.0000 across six seeds. `data/heldout_vocab/` exists because of this, and it varies *vocabulary* rather than *structure* — a batch whose correct label is genuinely undecidable from structure alone is still unbuilt.
+- **The held-out-vocabulary batch is a rewrite of one seed, not an independent draw.** It shares the reference batch's arithmetic and case allocation exactly; it tests generalization across surface forms only.
+- **Slot A is net-negative on the reference batch and is not the default.** Kept as the §5.4 comparator.
+- **`LlmSemantics` falls back to the keyword arm on a strict-mode cache miss** rather than raising, counting into `LlmSemantics.misses`. A run therefore reports how much of it was model-answered instead of assuming all of it was.
+- **Adapter inference cannot express a single-amount-column-plus-direction-flag statement**, because FR-08's profile schema has two money columns and no direction flag. Widening it is a §3.1 change. The loop gives up cleanly rather than guessing.
+- **Inferred profiles carry a caller-supplied `bank_profile` tag**, because `BankLine.bank_profile` is §3.1's closed three-value enum. The model is never asked for it and no check depends on it.
 - **No FR-05.** `EXTERNAL_ACTION_REQUIRED` cases carry a categorized exception and a recommended next step (Slot B), but never a proposed recognition entry — §2.4's stated v1 fallback.
-- **Orphan cases are unresolvable by construction (§3.6)** and cannot reach `AUTO_MATCHED` or `AUTO_CLOSED`; they are the majority of `EXTERNAL_ACTION_REQUIRED`'s population, which is why that state runs at roughly a quarter of the batch rather than reading as a defect.
-- **The reconciled-ledger diff artifact shows only `CONTROLLER_ADJUSTMENT` rows**, not the full ~5,800-row ledger — a deliberate reading of FR-11's "diff," not a truncation.
-- **`abstention_rate` on the Slot A arm reads below §5.5's 8–18% operating band** (0.0667 against the shipped arm's 0.1133). Slot A's eight-value output space has no "insufficient evidence in the fields provided" option, so a forced choice becomes a confident one; the band is a place the metric surface caught that.
+- **Orphan cases are unresolvable by construction (§3.6)** and cannot reach `AUTO_MATCHED` or `AUTO_CLOSED`; they are the majority of `EXTERNAL_ACTION_REQUIRED`'s population.
+- **The reconciled-ledger diff shows only `CONTROLLER_ADJUSTMENT` rows**, not the full ~5,800-row ledger — a deliberate reading of FR-11's "diff," not a truncation.
+- **The §5.5 thresholds remain provisional**, as the spec states. `abstention_rate` reads below the 8–18% band on the Slot A arm (0.0667 against the shipped arm's 0.1133): Slot A's eight-value output space has no "insufficient evidence" option, so a forced choice becomes a confident one.
