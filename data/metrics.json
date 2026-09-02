@@ -91,7 +91,7 @@
   },
   "provenance": {
     "cache_hit_rate": 1.0,
-    "git_sha": "2ae71c1de5b5043a61a4511f9058a6f4966b7be8",
+    "git_sha": "0aa7bb6b9017a003286e1eb387334a7722029b8f",
     "model_id": "accounts/fireworks/models/gpt-oss-120b",
     "seed": 0,
     "snapshot_date": "2026-08-28"
