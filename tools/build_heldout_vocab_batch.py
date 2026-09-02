@@ -83,17 +83,35 @@ _ORDERED = tuple((t, _grouped_regex(t)) for t in g.ALL_TEMPLATES)
 
 
 def rewrite_narration(narration: str) -> str:
-    """`narration` re-rendered from the held-out pool, slots preserved."""
+    """`narration` re-rendered from the held-out pool, slots preserved.
+
+    **An unrecognised party means the slots were parsed wrongly, so the match is
+    rejected and the next template tried.** `{party}` is `[A-Z ]+` and `{ref}`
+    is `[A-Z0-9]+`, so a `{ref}`-carrying template can swallow a party whose
+    last word is alphabetic: `BY NEFT RAZORPAY SOFTWARE PVT LTD` (an
+    absent-UTR shape) also fullmatches `BY NEFT {party} {ref}` with
+    `party="RAZORPAY SOFTWARE PVT"` and `ref="LTD"`. Since `ALL_TEMPLATES` puts
+    the `{ref}` shapes first, that wrong reading wins, the party misses
+    `PARTY_MAP`, and the name survives the rewrite unchanged — which silently
+    leaves `RAZORPAY` in a batch built to contain no such literal.
+
+    `generator.narration.narration_template` has the same precedence and the
+    same blind spot; there it is harmless, because it only names a shape. Here
+    the captured slots are load-bearing, so the party is used as a checksum on
+    the parse: the pools are closed sets, every party in this batch came from
+    one of them, and a capture outside them is proof the split was wrong.
+    """
     for template, regex in _ORDERED:
         match = regex.fullmatch(narration)
         if match is None:
             continue
         slots = match.groupdict()
-        replacement = TEMPLATE_MAP[template]
-        if "party" in slots and slots["party"] is not None:
-            party = slots["party"]
-            slots["party"] = PARTY_MAP.get(party, party)
-        return replacement.format(**{k: v for k, v in slots.items() if v is not None})
+        party = slots.get("party")
+        if party is not None:
+            if party not in PARTY_MAP:
+                continue
+            slots["party"] = PARTY_MAP[party]
+        return TEMPLATE_MAP[template].format(**{k: v for k, v in slots.items() if v is not None})
     raise ValueError(f"narration {narration!r} was not written from the shared pool")
 
 

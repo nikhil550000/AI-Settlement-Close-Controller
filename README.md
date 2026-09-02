@@ -54,6 +54,8 @@ uv run reconcile --semantics llm --data-dir data/heldout_vocab --cache-path data
 uv run reconcile --semantics keyword --data-dir data/heldout_vocab   # raises, by design
 ```
 
+The LLM row is also a committed artifact — `data/heldout_vocab/metrics.json` and `report.html`, pinned the same way FR-13 pins the reference run — so a reviewer who never runs the code still sees it. And `tests/test_heldout_vocabulary.py` pins **both** rows, asserting the failure as hard as the success: if someone later widens `GATEWAY_MARKER` to cover `RZRPAY`, the keyword arm starts completing this batch, that test goes red, and the ablation has to be re-measured rather than silently becoming a comparison of two arms that now agree. It also asserts `LlmSemantics.misses == 0`, so the headline number cannot be produced by a run that quietly fell back to keywords, and that `ground_truth.jsonl` is byte-identical to the reference batch's, so the comparison stays fair.
+
 ## Non-goals
 
 Explicitly out of scope (§2.10):
@@ -96,7 +98,7 @@ Other entry points:
 uv run generate --seed 0 --out-dir data/reference          # regenerate the reference batch
 uv run python tools/build_heldout_vocab_batch.py data/reference data/heldout_vocab
 uv run python tools/infer_bank_profile.py data/unseen_bank/kotak_statement.csv
-uv run pytest                                               # 586 passed, 1 skipped
+uv run pytest                                               # 592 passed, 1 skipped
 ```
 
 ## The agentic surface: bank-profile inference
@@ -204,6 +206,7 @@ AI Settlement Close Controller/
 └── data/
     ├── reference/              # committed seed-0 reference batch (FR-12)
     ├── heldout_vocab/          # the same batch, disjoint surface vocabulary
+    │                           #   + its own pinned metrics.json / report.html
     ├── adversarial/            # hand-authored ten-case boundary set (§5.3)
     ├── unseen_bank/            # exports with no hand-written profile
     ├── llm_cache.json          # SHA-256-keyed Slot A / Slot B cache (§4.3)
