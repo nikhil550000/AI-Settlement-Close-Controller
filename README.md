@@ -19,6 +19,64 @@ For each reconciliation case, the Controller:
 
 Every case terminates in exactly one of five states: `AUTO_MATCHED`, `AUTO_CLOSED`, `EXTERNAL_ACTION_REQUIRED`, `REVIEW_REQUIRED`, `ABSTAINED` (§1.3).
 
+### The shape of the system
+
+Ten components (§4.1), one direction of data flow, no cycles. Two things the component table further down cannot show: the generator reaches the pipeline **only through disk** (§4.1's import guard makes any other channel a test failure), and **component S is not a stage** — it is a dependency components 2, 3, 4, 5 and 8 each take, threaded as a `semantics=` parameter, which is why it hangs off the spine rather than sitting on it.
+
+```mermaid
+flowchart TB
+    G["<b>generator/</b><br/>seeded synthetic batch<br/>+ ground_truth.jsonl"]
+    SRC["<b>four canonical schemas</b> · §3.1<br/>settlements · recon_lines<br/>ledger_entries · raw bank export"]
+    C1["<b>1 · Adapters</b> + loaders<br/>FR-08 declarative column map → bank_line"]
+
+    subgraph spine ["pipeline/run.py · run_batch — components 2 → 8"]
+        direction TB
+        C2["<b>2 · Case assembly</b><br/>settlement-anchored + orphan cases"]
+        C3["<b>3 · Matcher</b><br/>FR-09 four-tier cascade · T+2 window<br/>integer-paise residual · tier-2 contention"]
+        C4["<b>4 · Predicates</b><br/>six §3.4 evidence tests, mutually exclusive"]
+        C5["<b>5 · Classifier</b><br/>exception class + subtype · Slot A"]
+        C6["<b>6 · Instantiator</b><br/>template → candidate JV, amount derived"]
+        C7["<b>7 · Validator</b><br/>the §1.7.5 chain — every check must pass"]
+        C8["<b>8 · Apply + re-reconcile</b><br/>idempotent write · residual recheck"]
+    end
+
+    TERM["<b>terminal state</b> · §1.3 — exactly one per case<br/>AUTO_MATCHED · AUTO_CLOSED · ABSTAINED<br/>EXTERNAL_ACTION_REQUIRED · REVIEW_REQUIRED"]
+    GT["<b>ground_truth.jsonl</b><br/><i>evaluation-only — never fed to the pipeline</i>"]
+    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts → one HTML file"]
+    SEM["<b>S · Semantics</b><br/>six free-text reads — five routing,<br/>one on the money path<br/><i>KeywordSemantics ⇄ LlmSemantics</i>"]
+
+    G -.->|"disk is the only channel<br/>§4.1 import guard"| SRC
+    SRC --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    C4 --> C5
+    C5 --> C6
+    C6 --> C7
+    C7 --> C8
+    C8 --> TERM
+    TERM --> C9
+    GT --> C9
+
+    SEM -.-> C2
+    SEM -.-> C3
+    SEM -.-> C4
+    SEM -.-> C5
+    SEM -.-> C8
+
+    classDef det fill:#eef4ff,stroke:#2b5fd9,stroke-width:1px,color:#1b1f24
+    classDef model fill:#fff4e0,stroke:#b8720a,stroke-width:2px,color:#1b1f24
+    classDef data fill:#f4f5f7,stroke:#9aa3b0,stroke-width:1px,color:#1b1f24
+    classDef state fill:#eaf7f0,stroke:#1e8e5a,stroke-width:2px,color:#1b1f24
+
+    class C1,C2,C3,C4,C6,C7,C8,C9 det
+    class SEM,C5 model
+    class G,SRC,GT data
+    class TERM state
+```
+
+<sub>**Blue** deterministic · **amber** has a model-touching arm, each separately switchable and separately measured · **grey** data · dotted edges are dependencies, not data flow.</sub>
+
 ### Where the model is allowed to act, exactly
 
 Invariant 1.7.2: the model may *classify* and may *write prose*; it may never originate an account, an amount, or a narration on the automated path. Everything that reaches the ledger — which account, which amount, which template — is computed by deterministic code the model never touches. There are four model-touching surfaces, and each is separately switchable and separately measured:
@@ -30,6 +88,51 @@ Invariant 1.7.2: the model may *classify* and may *write prose*; it may never or
 | **Slot B** — resolution text and abstention rationale | `pipeline/narration.py` | prose for a human reviewer, labelled model-generated in the report | no — off the money path |
 | **Contested-credit resolution** — the money-path read | `pipeline/semantics.py` | which of two settlements a contested credit pays, or `null` | yes — `false_match_rate` is the referee |
 | **Adapter inference** — the agentic loop | `pipeline/adapters/inference.py` | a proposed YAML column map for a bank with no hand-written profile | yes — nine deterministic checks accept or reject it |
+
+Drawn, because this is the invariant the whole build rests on — five model surfaces, every one of them routed through deterministic code that already existed, and three things with no path to the ledger at all:
+
+```mermaid
+flowchart LR
+    M1["<b>Semantics</b> · five routing reads<br/><i>returns a bool, or a name lifted<br/>verbatim from the bank's own text</i>"]
+    M4["<b>Contested credit</b> · which settlement<br/><i>the one read that can misroute money</i>"]
+    M5["<b>Adapter inference</b> · a column map<br/><i>propose → verify → repair, budget 3</i>"]
+    M2["<b>Slot A</b> · subtype label<br/><i>one of eight enum values</i>"]
+    M3["<b>Slot B</b> · reviewer prose<br/><i>badged model-generated</i>"]
+
+    V1["substring check<br/><i>the name must appear in the line</i>"]
+    V4["<b>the grounding gate</b><br/><i>the winning settlement's own payment<br/>method must appear as a word</i>"]
+    V5["nine checks, incl. balance_continuity<br/><i>Δbalance == deposit − withdrawal, in paise</i>"]
+    V7["<b>the §1.7.5 validator chain</b><br/><i>balanced · allowlisted · evidenced<br/>idempotent · zero post-adjustment residual</i>"]
+
+    N1["originate an account"]
+    N2["originate an amount"]
+    N3["originate a posted narration"]
+
+    LEDGER["<b>the ledger</b><br/>CONTROLLER_ADJUSTMENT rows"]
+    REPORT["<b>the report</b><br/><i>read by a human</i>"]
+
+    M1 --> V1
+    M4 --> V4
+    M5 --> V5
+    M2 --> V7
+    V1 --> V7
+    V4 --> V7
+    V7 ==>|"only path in"| LEDGER
+    M3 -.->|"off the money path"| REPORT
+    N1 x--x LEDGER
+    N2 x--x LEDGER
+    N3 x--x LEDGER
+
+    classDef modelbox fill:#fff4e0,stroke:#b8720a,stroke-width:2px,color:#1b1f24
+    classDef gatebox fill:#eef4ff,stroke:#2b5fd9,stroke-width:2px,color:#1b1f24
+    classDef forbidden fill:#fdeeec,stroke:#c0392b,stroke-width:2px,color:#1b1f24,stroke-dasharray: 4 3
+    classDef out fill:#eaf7f0,stroke:#1e8e5a,stroke-width:3px,color:#1b1f24
+
+    class M1,M2,M3,M4,M5 modelbox
+    class V1,V4,V5,V7 gatebox
+    class N1,N2,N3 forbidden
+    class LEDGER,REPORT out
+```
 
 The semantics surface returns only a `bool` or a counterparty name **lifted verbatim out of text the bank wrote** (verified as a substring before it is trusted). Its answers route cases; they never price one. `LlmSemantics` could return adversarial nonsense on every call without producing a wrong journal entry — it would produce wrong routing, which the §1.6 metric surface measures and the §1.7.5 validator chain still gates.
 
@@ -208,13 +311,17 @@ Note the contrast with the semantics ablation above, which is the actual lesson:
 
 ## Repository layout
 
+Root holds four documents and nothing else, in the order a reader needs them: what I said I would build, what I built, how it is put together, and what broke. The two working documents that drove the build — the standing brief and the session log — are evidence rather than reading material, so they sit in `docs/`.
+
 ```
 AI Settlement Close Controller/
-├── spec.md                     # single source of truth
-├── AGENT.md                    # standing brief every coding session opens with
-├── BUILDLOG.md                 # append-only, one entry per session (Built/Broke/Cut/Decided/Next)
+├── spec.md                     # what I said I'd build — single source of truth
+├── README.md                   # what I built, and what it measures
+├── ARCHITECTURE.md             # how it's put together — component-level design notes
 ├── FAILURES.md                 # what broke and how it was recovered
-├── ARCHITECTURE.md             # component-level design notes
+├── docs/
+│   ├── AGENT.md                #   standing brief every coding session opens with (§6.1)
+│   └── BUILDLOG.md             #   append-only, one entry per session (Built/Broke/Cut/Decided/Next) (§6.2)
 ├── generator/                  # synthetic data + ground truth — separate entry point
 ├── pipeline/                   # the graded path — MUST NOT import generator/, ever
 │   ├── cli.py                  #   `uv run reconcile` — FR-10's single command

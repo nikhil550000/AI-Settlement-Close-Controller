@@ -90,7 +90,7 @@
     "REVIEW_REQUIRED": 17
   },
   "provenance": {
-    "cache_hit_rate": 0.9753846153846154,
+    "cache_hit_rate": 1.0,
     "git_sha": "f79580ff13bafef56d1439ee7050cb3c2d2bbfa0",
     "model_id": "accounts/fireworks/models/gpt-oss-120b",
     "seed": 0,

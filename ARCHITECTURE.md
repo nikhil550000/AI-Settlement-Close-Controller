@@ -6,6 +6,61 @@ Component-level design notes. `spec.md` §4 is the source of truth for the decis
 
 Ten components (§4.1), one direction of data flow, no cycles. The generator is a separate entry point, not a pipeline stage.
 
+```mermaid
+flowchart TB
+    G["<b>generator/</b><br/>seeded synthetic batch<br/>+ ground_truth.jsonl"]
+    SRC["<b>four canonical schemas</b> · §3.1<br/>settlements · recon_lines<br/>ledger_entries · raw bank export"]
+    C1["<b>1 · Adapters</b> + loaders<br/>FR-08 declarative column map → bank_line"]
+
+    subgraph spine ["pipeline/run.py · run_batch — components 2 → 8"]
+        direction TB
+        C2["<b>2 · Case assembly</b><br/>settlement-anchored + orphan cases"]
+        C3["<b>3 · Matcher</b><br/>FR-09 four-tier cascade · T+2 window<br/>integer-paise residual · tier-2 contention"]
+        C4["<b>4 · Predicates</b><br/>six §3.4 evidence tests, mutually exclusive"]
+        C5["<b>5 · Classifier</b><br/>exception class + subtype · Slot A"]
+        C6["<b>6 · Instantiator</b><br/>template → candidate JV, amount derived"]
+        C7["<b>7 · Validator</b><br/>the §1.7.5 chain — every check must pass"]
+        C8["<b>8 · Apply + re-reconcile</b><br/>idempotent write · residual recheck"]
+    end
+
+    TERM["<b>terminal state</b> · §1.3 — exactly one per case<br/>AUTO_MATCHED · AUTO_CLOSED · ABSTAINED<br/>EXTERNAL_ACTION_REQUIRED · REVIEW_REQUIRED"]
+    GT["<b>ground_truth.jsonl</b><br/><i>evaluation-only — never fed to the pipeline</i>"]
+    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts → one HTML file"]
+    SEM["<b>S · Semantics</b><br/>six free-text reads — five routing,<br/>one on the money path<br/><i>KeywordSemantics ⇄ LlmSemantics</i>"]
+
+    G -.->|"disk is the only channel<br/>§4.1 import guard"| SRC
+    SRC --> C1
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    C4 --> C5
+    C5 --> C6
+    C6 --> C7
+    C7 --> C8
+    C8 --> TERM
+    TERM --> C9
+    GT --> C9
+
+    SEM -.-> C2
+    SEM -.-> C3
+    SEM -.-> C4
+    SEM -.-> C5
+    SEM -.-> C8
+
+    classDef det fill:#eef4ff,stroke:#2b5fd9,stroke-width:1px,color:#1b1f24
+    classDef model fill:#fff4e0,stroke:#b8720a,stroke-width:2px,color:#1b1f24
+    classDef data fill:#f4f5f7,stroke:#9aa3b0,stroke-width:1px,color:#1b1f24
+    classDef state fill:#eaf7f0,stroke:#1e8e5a,stroke-width:2px,color:#1b1f24
+
+    class C1,C2,C3,C4,C6,C7,C8,C9 det
+    class SEM,C5 model
+    class G,SRC,GT data
+    class TERM state
+```
+
+<sub>**Blue** deterministic · **amber** has a model-touching arm · **grey** data · dotted edges are dependencies, not data flow.</sub>
+
+
 | # | Component | Job | Module |
 |---|---|---|---|
 | G | Generator | Emits reference / held-out / scale batches plus ground truth from a seed | `generator/` |
@@ -25,6 +80,52 @@ Ten components (§4.1), one direction of data flow, no cycles. The generator is 
 `pipeline/run.py`'s `run_batch` composes components 2–8 into one call, taking already-loaded records — where they came from (the committed reference dataset, a raw bank export, or a test fixture) is the caller's business, never `run_batch`'s. It takes two swappable behaviours alongside them: `classifier=` (component 5's arm) and `semantics=` (component S's arm), both defaulting to their deterministic implementations. `pipeline/cli.py`'s `reconcile` command (FR-10) is the one caller that matters for a reviewer: it loads component 1's output from `data/reference/`, calls `run_batch`, then component 9's `build_eval_report`/`render_report_html`. `--classifier` and `--semantics` select the arms independently, because they are different questions and §5.4's ablation wants them separable.
 
 **Components 4 and 6–8 are the invariant-bearing core.** A predicate overlap, a wrong amount derivation, a validator that passes when it shouldn't, or a non-idempotent apply are all undetectable from output alone — which is why REV-16 (predicate overlap), REV-24 (idempotency constraint granularity) and the Phase 4 checkpoint's explicit "no cut" rule all concentrate here.
+
+
+### How one case reaches its state
+
+`pipeline.apply.assign_state` is six branches, and **the order of the branches is the precedence** — which is the part prose renders badly and a picture renders exactly. Each branch is §3.3's, and two orderings in particular are load-bearing: a policy exclusion is evaluated *before* anything else, "regardless of model confidence" and regardless of the fact that the entry would have validated; and a correction that landed outranks any subtype trigger the same case also fired, because §3.3 defines `OPERATIONAL_EXCEPTION` as a discrepancy no journal entry can resolve.
+
+```mermaid
+flowchart TB
+    START["one case, after components 2 → 7"]
+    B1{"1 · §2.5 policy exclusion?"}
+    B2{"2 · correction applied and<br/>re-reconciled to 0 paise?"}
+    B3{"3 · candidate existed but failed<br/>the §1.7.5 chain?"}
+    B4{"4 · subtype trigger fired, or classifier<br/>said UNMATCHED_INBOUND_CREDIT?"}
+    B5{"5 · residual == 0 paise?"}
+
+    RRP["<b>REVIEW_REQUIRED</b><br/><i>decline_reason = policy</i>"]
+    AC["<b>AUTO_CLOSED</b>"]
+    RRC["<b>REVIEW_REQUIRED</b><br/><i>decline_reason = confidence</i>"]
+    EA["<b>EXTERNAL_ACTION_REQUIRED</b>"]
+    AM["<b>AUTO_MATCHED</b>"]
+    AB["<b>6 · ABSTAINED</b><br/><i>the fallthrough §2.3 calls for —<br/>reached on evidence, not by accident</i>"]
+
+    START --> B1
+    B1 -->|yes| RRP
+    B1 -->|no| B2
+    B2 -->|yes| AC
+    B2 -->|no| B3
+    B3 -->|yes| RRC
+    B3 -->|no| B4
+    B4 -->|yes| EA
+    B4 -->|no| B5
+    B5 -->|yes| AM
+    B5 -->|no| AB
+
+    classDef q fill:#f4f5f7,stroke:#9aa3b0,stroke-width:1px,color:#1b1f24
+    classDef closed fill:#eaf7f0,stroke:#1e8e5a,stroke-width:2px,color:#1b1f24
+    classDef human fill:#fff4e0,stroke:#b8720a,stroke-width:2px,color:#1b1f24
+    classDef abstain fill:#f0f0f3,stroke:#6b7280,stroke-width:2px,color:#1b1f24
+
+    class START,B1,B2,B3,B4,B5 q
+    class AC,AM closed
+    class RRP,RRC,EA human
+    class AB abstain
+```
+
+<sub>**Green** the two states that close without a human · **amber** the three that hand off to one · **grey** abstention, a designed outcome (§1.3) rather than a failure.</sub>
 
 ## Data model
 

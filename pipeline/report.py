@@ -374,6 +374,24 @@ details .drill { margin-top: 0.5rem; padding: 0.6rem 0.8rem; background: #f7f8fa
 tr[hidden] { display: none; }
 footer.report-footer { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem;
   color: var(--muted); font-size: 0.8rem; }
+/* The headline band: the four figures §1.6 ranks first, above the tables that
+   derive them. One grouped object with hairline internal rules rather than four
+   floating cards — these four belong together, and the borders should say so. */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1px; background: var(--border); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin: 0 0 0.6rem; }
+.summary .tile { background: var(--panel); padding: 0.95rem 1.15rem;
+  display: flex; flex-direction: column; gap: 0.2rem; }
+.summary .stat { font-size: 1.7rem; font-weight: 600; line-height: 1.1;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
+.summary .tile-label { font-size: 0.82rem; color: var(--ink); }
+.summary .tile-note { font-size: 0.75rem; color: var(--muted); }
+.summary .tile.primary .stat { color: var(--accent); }
+.summary .tile.good .stat { color: var(--auto-matched); }
+.summary .tile.bad .stat { color: var(--bad); }
+.summary .tile.neutral .stat { color: var(--abstained); }
+p.summary-note { max-width: 90ch; color: var(--muted); font-size: 0.83rem;
+  margin: 0 0 1.25rem; }
 </style>
 </head>
 <body>
@@ -399,6 +417,34 @@ footer.report-footer { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem
 </header>
 
 <main>
+
+{% set m = context.eval_report.metrics %}
+<div class="summary">
+  <div class="tile primary">
+    <div class="stat">{{ auto_resolved_count }} / {{ total_cases }}</div>
+    <div class="tile-label">closed automatically</div>
+    <div class="tile-note">AUTO_MATCHED + AUTO_CLOSED</div>
+  </div>
+  <div class="tile {{ 'good' if m.false_match_rate.numerator == 0 else 'bad' }}">
+    <div class="stat">{{ m.false_match_rate.numerator }} / {{ m.false_match_rate.denominator }}</div>
+    <div class="tile-label">false matches</div>
+    <div class="tile-note">§1.6 primary safety metric &middot; target 0</div>
+  </div>
+  <div class="tile {{ 'good' if m.auto_close_precision.value == 1.0 else 'primary' }}">
+    <div class="stat">{{ m.auto_close_precision.numerator }} / {{ m.auto_close_precision.denominator }}</div>
+    <div class="tile-label">auto-close precision</div>
+    <div class="tile-note">auto-applied entries, not cases (REV-10)</div>
+  </div>
+  <div class="tile neutral">
+    <div class="stat">{{ m.abstention_rate.numerator }} / {{ m.abstention_rate.denominator }}</div>
+    <div class="tile-label">abstained</div>
+    <div class="tile-note">a designed outcome (§1.3), not a failure</div>
+  </div>
+</div>
+<p class="summary-note">Read these four before the tables that derive them. Every figure
+is a numerator over its own denominator, and the denominators differ on purpose —
+<code>false_match_rate</code> is over total cases while <code>auto_close_precision</code>
+is over auto-applied entries, so the two are not complements of one another (§1.6).</p>
 
 <section id="metrics">
   <h2>1. Metrics report</h2>
@@ -711,6 +757,14 @@ def render_report_html(context: ReportContext) -> str:
     total_cases = metrics.total_cases
     external_action_count = ground_truth_state_counts.get(str(OutcomeState.EXTERNAL_ACTION_REQUIRED), 0)
     no_action_count = ground_truth_state_counts.get(str(OutcomeState.AUTO_MATCHED), 0)
+    # The headline band's one derived figure. Read off `predicted_state_counts`
+    # rather than `total_cases - open_case_rate.numerator` so the tile shows the
+    # two states it names and stays auditable against §5.2's own matrix, instead
+    # of arriving as the complement of a metric defined somewhere else.
+    predicted_state_counts = metrics.predicted_state_counts
+    auto_resolved_count = predicted_state_counts.get(str(OutcomeState.AUTO_MATCHED), 0) + (
+        predicted_state_counts.get(str(OutcomeState.AUTO_CLOSED), 0)
+    )
 
     env = Environment(autoescape=True)
     env.globals["ratio"] = _ratio
@@ -741,6 +795,7 @@ def render_report_html(context: ReportContext) -> str:
         anomaly_enrichment_disclosure=ANOMALY_ENRICHMENT_DISCLOSURE,
         external_action_count=external_action_count,
         no_action_count=no_action_count,
+        auto_resolved_count=auto_resolved_count,
         total_cases=total_cases,
         external_action_share=(external_action_count / total_cases) if total_cases else 0.0,
         no_action_share=(no_action_count / total_cases) if total_cases else 0.0,
