@@ -28,6 +28,7 @@ Invariant 1.7.2: the model may *classify* and may *write prose*; it may never or
 | **Semantics** — five free-text reads over bank and adjustment prose | `pipeline/semantics.py` | does this narration name a counterparty; is this credit the gateway; is this a reversal; is this a bank charge; is this a tax position | yes — the whole §1.6 surface, both arms |
 | **Slot A** — exception-subtype classification | `pipeline/classifier.py` | one of eight subtype labels on a non-auto-close case | yes — §5.2 |
 | **Slot B** — resolution text and abstention rationale | `pipeline/narration.py` | prose for a human reviewer, labelled model-generated in the report | no — off the money path |
+| **Contested-credit resolution** — the money-path read | `pipeline/semantics.py` | which of two settlements a contested credit pays, or `null` | yes — `false_match_rate` is the referee |
 | **Adapter inference** — the agentic loop | `pipeline/adapters/inference.py` | a proposed YAML column map for a bank with no hand-written profile | yes — nine deterministic checks accept or reject it |
 
 The semantics surface returns only a `bool` or a counterparty name **lifted verbatim out of text the bank wrote** (verified as a substring before it is trusted). Its answers route cases; they never price one. `LlmSemantics` could return adversarial nonsense on every call without producing a wrong journal entry — it would produce wrong routing, which the §1.6 metric surface measures and the §1.7.5 validator chain still gates.
@@ -55,6 +56,34 @@ uv run reconcile --semantics keyword --data-dir data/heldout_vocab   # raises, b
 ```
 
 The LLM row is also a committed artifact — `data/heldout_vocab/metrics.json` and `report.html`, pinned the same way FR-13 pins the reference run — so a reviewer who never runs the code still sees it. And `tests/test_heldout_vocabulary.py` pins **both** rows, asserting the failure as hard as the success: if someone later widens `GATEWAY_MARKER` to cover `RZRPAY`, the keyword arm starts completing this batch, that test goes red, and the ablation has to be re-measured rather than silently becoming a comparison of two arms that now agree. It also asserts `LlmSemantics.misses == 0`, so the headline number cannot be produced by a run that quietly fell back to keywords, and that `ground_truth.jsonl` is byte-identical to the reference batch's, so the comparison stays fair.
+
+## The second result: judgment on the money path, and the gate it needs
+
+The vocabulary ablation above is about *robustness* — the model reading words the rules were not written for. This one is about *judgment*, and it is the only place in the build where the model can change a money outcome.
+
+**It started as a bug.** FR-09 tier 2 matches a credit to a settlement by exact amount inside a T+2 window, and that key is not unique to a settlement. `match_settlement_anchored_case` enforced §4.6's "a tie is not a match" *within* one settlement's candidates — the only tie a per-case pass can see. Across settlements, nothing checked:
+
+```
+setl_AAA  tier=2  residual=0  lines=['bank_X']
+setl_BBB  tier=2  residual=0  lines=['bank_X']     -> DOUBLE CLAIM
+```
+
+Both reach `AUTO_MATCHED` on one credit that can belong to at most one of them — a guaranteed false match against §1.6's primary safety metric. It survived 602 tests and six seeds because `generator/clean.py` draws amounts lognormally, so an exact collision inside one window essentially never occurs. `match_cases` now demotes every claimant to tier 3, and abstaining on both is *correct*, not merely safe: the evidence genuinely does not say which settlement owns the credit.
+
+**Then it became the experiment.** A contested credit is the first place the deterministic path abstains not from caution but because no rule in §4.6 *can* express the discriminator — while a human reads it in seconds. `data/contested/` is twelve hand-authored cases: two pairs whose narration names the payment method the settlement actually settles, two pairs whose narration says nothing, and four uncontested controls.
+
+| arm | state accuracy | contests resolved | `false_match_rate` |
+|---|---|---|---|
+| `--semantics keyword` | 6/12 = 0.5000 | 0 of 2 | **0/12** |
+| `--semantics llm` | 8/12 = 0.6667 | 2 of 2 | **0/12** |
+
+The model arm is strictly additive — it matched everything the keyword arm did — and the two it gains are exactly the decidable contests.
+
+**The part worth reading is what happened before the gate existed.** Measured first, on a narration that names nothing (`"NEFT CR RAZORPAY SOFTWARE PVT LTD SETTLEMENT"`), the model answered a settlement id anyway. 5 of 6. A coin flip presented as an answer — and on this read a coin flip books a real credit against the wrong settlement.
+
+The fix is not a better prompt. It is to stop trusting the answer and check the **justification**: a settlement may only win if one of its own payment methods appears as a word in the narration the model read — the same shape of check as the counterparty read's substring rule, and unfakeable for the same reason. The model may point at evidence; it may not assert without it. An ungrounded answer is discarded rather than downgraded, so it costs exactly the abstention the deterministic path would have produced. **With the gate, 6 of 6**, and the four undecidable settlements stay untouched.
+
+That is this repository's answer to the track's *"verification capacity, not generation speed, is the bottleneck"* — not quoted, measured. `tests/test_contested.py` pins both arms, including that the model arm is strictly additive and costs no false match.
 
 ## Non-goals
 
@@ -98,7 +127,7 @@ Other entry points:
 uv run generate --seed 0 --out-dir data/reference          # regenerate the reference batch
 uv run python tools/build_heldout_vocab_batch.py data/reference data/heldout_vocab
 uv run python tools/infer_bank_profile.py data/unseen_bank/kotak_statement.csv
-uv run pytest                                               # 592 passed, 1 skipped
+uv run pytest                                               # 602 passed, 1 skipped
 ```
 
 ## The agentic surface: bank-profile inference
@@ -122,6 +151,7 @@ Every iteration is judged by deterministic code that already existed, which is w
 |---|---|
 | `data/reference/` | The committed seed-0 batch (FR-12): 150 cases — 125 settlement-anchored, 25 orphan — 1,392 recon lines, 5,418 ledger entries, 176 bank lines. Every population's size is fixed by §3.5/§3.6's allocation tables and asserted exactly in `tests/test_generator_batch.py`. |
 | `data/heldout_vocab/` | The same batch under a disjoint surface vocabulary (`tools/heldout_vocabulary.py`). Rewritten by template, `{ref}` tokens preserved verbatim so FR-09's tier cascade sees identical tokens; `ground_truth.jsonl` copied byte-for-byte. |
+| `data/contested/` | Twelve hand-authored cases exercising FR-09 tier-2 contention: two decidable pairs, two undecidable pairs, four uncontested controls. Reported separately (`tests/test_contested.py`), never merged. |
 | `data/adversarial/` | Ten hand-authored cases, no RNG, targeting four evidence boundaries: `T-01` vs `T-03` (REV-16), the family-4 timing triangle, duplicate-credit vs reversal (REV-18), and the ambiguous / unmatched-inbound-credit split. Reported separately (`tests/test_adversarial.py`), never merged: 10/10 state and exception-class agreement. |
 | `data/unseen_bank/` | Two bank exports with no hand-written profile, for the inference loop above. |
 | seed 2 (generated on demand) | §5.1's held-out batch, never inspected case by case. |
@@ -218,6 +248,9 @@ AI Settlement Close Controller/
 
 ## Known limitations
 
+- **Both ablation batches were designed by the author knowing where the deterministic path would break.** The keyword lists and the FR-09 cascade both predate them, so neither is tuned-to-fail — but the *axes* (vocabulary drift, amount collision) were chosen deliberately. They demonstrate that the mechanisms are real; they do not establish how often either occurs in a real merchant's bank feed.
+- **Contested credits currently fall out of the batch entirely.** The four contested credits narrate the gateway, so `assemble_orphan_cases` excludes them; after tier-2 demotion no settlement holds them either. Rs 12,693.20 of real bank credit is attached to nothing and appears in no case and no metric. Safe but invisible — it should be raised as an ambiguity in its own right, and is not.
+- **`assign_state` reads the books-versus-evidence residual, not the matcher's.** So a contested settlement with accrual-clean books is `AUTO_MATCHED` on residual alone regardless of match tier, and only a fired trigger moves it. Every contested case in `data/contested/` is therefore placed past its T+2 window so `BANK_CREDIT_OVERDUE` can fire; inside the window the batch would measure nothing. That coupling is a design smell the fixture exposed and did not fix.
 - **The reference batch contains no irreducible ambiguity, so it cannot discriminate between arms.** A keyword matcher scores 1.0000 across six seeds. `data/heldout_vocab/` exists because of this, and it varies *vocabulary* rather than *structure* — a batch whose correct label is genuinely undecidable from structure alone is still unbuilt.
 - **The held-out-vocabulary batch is a rewrite of one seed, not an independent draw.** It shares the reference batch's arithmetic and case allocation exactly; it tests generalization across surface forms only.
 - **Slot A is net-negative on the reference batch and is not the default.** Kept as the §5.4 comparator.
