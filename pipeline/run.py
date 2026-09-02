@@ -155,6 +155,7 @@ def run_batch(
         assemble_cases(settlements, recon_lines, bank_lines, semantics=semantics),
         bank_lines,
         snapshot_date=snapshot_date,
+        semantics=semantics,
     )
     evidences = evaluate_cases(cases, ledger_entries, semantics=semantics)
     candidates = instantiate_cases(evidences, cases, ledger_entries)

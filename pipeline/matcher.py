@@ -45,8 +45,15 @@ whose deposit differs from the settlement header (`SETTLEMENT_AMOUNT_MISMATCH`) 
 supposed to leave that gap visible for the predicate evaluator (component 4) to
 find, not have the matcher paper over it.
 
-Entirely deterministic — no RNG, no model call, per §4.2 ("everything else is
-deterministic, including... the full FR-09 cascade").
+**The cascade itself is entirely deterministic** — no RNG, no model call, per
+§4.2 ("everything else is deterministic, including... the full FR-09 cascade").
+`match_cases` adds exactly one question that is not: when two settlements
+contest the same credit at tier 2, it asks `NarrationSemantics` which one the
+narration names. Under the default `KeywordSemantics` the answer is always
+`None` and the contested settlements simply abstain, so the cascade's behaviour
+is unchanged from the paragraph above; the question exists so that arm can be
+swapped and the difference measured. See `pipeline/semantics.py`'s docstring for
+why this is the one read that can misroute money, and what gates it.
 """
 
 from __future__ import annotations
@@ -58,6 +65,7 @@ from enum import IntEnum
 
 from pipeline.case_assembly import Case, CaseKind
 from pipeline.schemas import BankLine, Settlement
+from pipeline.semantics import KEYWORD, ContestedCandidate, NarrationSemantics
 from pipeline.timing import is_within_settlement_window, settlement_window_deadline
 
 _TOKEN_RE = re.compile(r"[A-Z0-9]{8,}")
@@ -177,9 +185,113 @@ def _matched(case: Case, matched_lines: Sequence[BankLine], tier: MatchTier, set
     )
 
 
-def match_cases(cases: Sequence[Case], bank_lines: Sequence[BankLine], *, snapshot_date: date) -> list[Case]:
-    """Run the cascade over every case; orphan cases pass through unchanged (already evidence-complete)."""
-    return [match_settlement_anchored_case(case, bank_lines, snapshot_date=snapshot_date) for case in cases]
+def _contested_tier2_line_ids(cases: Sequence[Case]) -> set[str]:
+    """Bank lines that more than one settlement claimed at tier 2.
+
+    Tier 0 and tier 1 are not included: both key off `settlement.utr`, which is
+    unique per settlement, so two settlements cannot legitimately claim one line
+    through them. Tier 2 keys off an amount and a date window, and neither is
+    unique to a settlement — which is exactly why it is the tier that can
+    collide.
+    """
+    claims: dict[str, int] = {}
+    for case in cases:
+        if case.match_tier != int(MatchTier.AMOUNT_AND_WINDOW):
+            continue
+        for line in case.bank_lines:
+            claims[line.line_id] = claims.get(line.line_id, 0) + 1
+    return {line_id for line_id, count in claims.items() if count > 1}
+
+
+def match_cases(
+    cases: Sequence[Case],
+    bank_lines: Sequence[BankLine],
+    *,
+    snapshot_date: date,
+    semantics: NarrationSemantics = KEYWORD,
+) -> list[Case]:
+    """Run the cascade over every case, then resolve tier-2 contention across them.
+
+    **§4.6's tie rule has to be applied twice, and only one of them was.**
+    `match_settlement_anchored_case` enforces "a tie is not a match" *within* one
+    settlement's candidate list (`len(tier2) == 1`), because that is the tie the
+    cascade can see from inside a single case. But tier 2's key — an exact amount
+    inside a T+2 window — is not unique to a settlement, so the symmetric tie
+    exists *across* settlements and no per-case pass can detect it: two
+    settlements of the same amount created the same day each see exactly one
+    candidate credit, each match it at tier 2, each report `residual_paise = 0`,
+    and both reach `AUTO_MATCHED` on the strength of one bank credit that can
+    belong to at most one of them. That is a guaranteed false match, and
+    `false_match_rate` is §1.6's primary safety metric for exactly this.
+
+    It survived 592 tests and six seeds because `generator/clean.py` draws payment
+    amounts lognormally, so an exact collision between two settlements in the same
+    window is vanishingly rare — the reference batch simply never produced one.
+    `data/contested/` is the batch that does, and `tests/test_contested.py` pins
+    this.
+
+    The resolution is the one §4.6 already states — "a tie is not a match; it
+    routes to ambiguity" — applied to the contended line: every settlement
+    claiming it falls back to tier 3, under the same §3.3 timing rule any other
+    tier-3 case gets. Abstaining on both is correct rather than merely safe: the
+    evidence genuinely does not say which settlement the credit belongs to, and
+    §1.3's optimization principle ranks a false match strictly worse than a
+    deferral.
+    """
+    matched = [match_settlement_anchored_case(case, bank_lines, snapshot_date=snapshot_date) for case in cases]
+    contested = _contested_tier2_line_ids(matched)
+    if not contested:
+        return matched
+
+    # One question per contended line, asked once: which settlement does the
+    # narration say this credit pays? `KeywordSemantics` always answers `None`
+    # (§4.6 has no tier that can read it), so the keyword arm's behaviour is
+    # exactly the abstention above and nothing below changes it.
+    winners: dict[str, str] = {}
+    for line_id in sorted(contested):
+        claimants = [
+            case
+            for case in matched
+            if case.match_tier == int(MatchTier.AMOUNT_AND_WINDOW)
+            and any(line.line_id == line_id for line in case.bank_lines)
+        ]
+        narration = next(
+            (line.narration for case in claimants for line in case.bank_lines if line.line_id == line_id),
+            "",
+        )
+        candidates = tuple(
+            ContestedCandidate(
+                settlement_id=case.case_id,
+                payment_methods=tuple(sorted({str(line.method) for line in case.recon_lines if line.method})),
+            )
+            for case in claimants
+        )
+        winner = semantics.resolve_contested_credit(narration, candidates)
+        if winner is not None:
+            winners[line_id] = winner
+
+    resolved: list[Case] = []
+    for case in matched:
+        if case.match_tier == int(MatchTier.AMOUNT_AND_WINDOW) and any(
+            line.line_id in contested and winners.get(line.line_id) != case.case_id
+            for line in case.bank_lines
+        ):
+            settlement = case.settlement
+            assert settlement is not None  # tier 2 is settlement-anchored by construction
+            in_window = is_within_settlement_window(_settlement_created_date(settlement), snapshot_date)
+            resolved.append(
+                case.model_copy(
+                    update={
+                        "bank_lines": (),
+                        "match_tier": int(MatchTier.NO_MATCH),
+                        "residual_paise": _apply_timing_rule(int(settlement.amount), in_window=in_window),
+                        "in_settlement_window": in_window,
+                    }
+                )
+            )
+        else:
+            resolved.append(case)
+    return resolved
 
 
 def match_tier_distribution(cases: Sequence[Case]) -> dict[int, int]:

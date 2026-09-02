@@ -2,16 +2,17 @@
 
 ## Why this module exists
 
-Five of this pipeline's decision boundaries are questions about English, not
+Six of this pipeline's decision boundaries are questions about English, not
 about arithmetic:
 
-| question | asked by |
-|---|---|
-| does this narration name an external counterparty? | `pipeline.classifier` (§4.2's Slot A split) |
-| is this credit the payment gateway paying us? | `pipeline.case_assembly` (the settlement/orphan split) |
-| does this line say a credit was undone? | `pipeline.case_assembly`, `pipeline.predicates` (§3.3 `REVERSAL_UNMATCHED`) |
-| is this withdrawal a bank charge? | `pipeline.case_assembly` (§3.6's "charges stay noise") |
-| is this adjustment a tax position? | `pipeline.policy` (§2.5/FR-06's exclusion) |
+| question | asked by | money path |
+|---|---|---|
+| does this narration name an external counterparty? | `pipeline.classifier` (§4.2's Slot A split) | no |
+| is this credit the payment gateway paying us? | `pipeline.case_assembly` (the settlement/orphan split) | no |
+| does this line say a credit was undone? | `pipeline.case_assembly`, `pipeline.predicates` (§3.3 `REVERSAL_UNMATCHED`) | no |
+| is this withdrawal a bank charge? | `pipeline.case_assembly` (§3.6's "charges stay noise") | no |
+| is this adjustment a tax position? | `pipeline.policy` (§2.5/FR-06's exclusion) | no |
+| which settlement does this contested credit pay? | `pipeline.matcher` (FR-09 tier-2 contention) | **yes** |
 
 Until now each was answered in place by a literal-substring test against a
 tuple of keywords, and each of those tuples separated the generator's
@@ -44,28 +45,39 @@ model belongs: on the questions where "no residual computation decides it" is
 true, and nowhere else.
 
 **Invariant 1.7.2 is untouched, and this module is why it stays that way.**
-Every method here returns a `bool` or a counterparty *name lifted out of text
-the bank wrote*. None returns an account, an amount, a template, or a posting
-direction, and nothing downstream can turn one into any of those: the answers
-feed case assembly's grouping, a §3.3 trigger, and a policy *exclusion* —
-three places whose effect is to route a case, never to price one. The model
-still cannot originate a number that reaches the ledger. `LlmSemantics` could
-return adversarial nonsense on every call without producing a wrong journal
-entry; it would produce wrong *routing*, which the §1.6 metric surface
-measures and which the §1.7.5 validator chain still gates.
+Every method here returns a `bool`, a counterparty *name lifted out of text the
+bank wrote*, or the id of a settlement the deterministic cascade had already
+validated. None returns an account, an amount, a template, or a posting
+direction, and nothing downstream can turn one into any of those.
+
+**Five of the six only route a case; the sixth can misroute money, and is
+treated differently.** `resolve_contested_credit` runs only where FR-09 tier 2
+found more than one settlement claiming one credit — a contest the deterministic
+arm resolves by abstaining on all of them. A wrong answer there does not
+fabricate a number, but it does book a real credit against the wrong settlement,
+which lands as a **false match**, §1.6's primary safety metric. That is the
+point rather than an oversight: `data/contested/` exists so the question "can
+judgment be trusted on the money path, and how much verification does it need
+first?" is answered with a measurement instead of an opinion. Its failure
+direction is always toward abstention — a cache miss, a malformed answer or an
+unrecognised id all yield `None`, which is exactly what the keyword arm returns.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict
 
 from pipeline.llm_cache import CacheMode, PromptCache
 from pipeline.llm_client import LLMClient
 
 __all__ = [
     "NarrationSemantics",
+    "ContestedCandidate",
     "KeywordSemantics",
     "LlmSemantics",
     "KEYWORD",
@@ -127,9 +139,28 @@ _ALNUM_TOKEN_RE = re.compile(r"[A-Z0-9]+")
 _MIN_COUNTERPARTY_TOKEN_LENGTH = 3
 
 
+class ContestedCandidate(BaseModel):
+    """One settlement competing for a contested bank credit (FR-09 tier 2).
+
+    Carries only what a reader would use to tell the candidates apart, and
+    deliberately no amount: every candidate has *the same* amount — that is
+    what made them contest in the first place — so an amount could not
+    discriminate even if invariant 1.7.2 permitted showing it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    settlement_id: str
+    payment_methods: tuple[str, ...]
+    """The distinct `recon_line.method` values this settlement rolled up, sorted.
+    A settlement that is wholly UPI reads differently from one that is wholly
+    card, and a bank narration that says so is the only evidence separating
+    them."""
+
+
 @runtime_checkable
 class NarrationSemantics(Protocol):
-    """The five free-text reads, as one substitutable interface.
+    """The six free-text reads, as one substitutable interface.
 
     A `Protocol` rather than a base class for the same reason
     `pipeline.llm_client.LLMClient` is one: every test injects a stub, and a
@@ -157,6 +188,30 @@ class NarrationSemantics(Protocol):
 
     def is_tax_position(self, description: str) -> bool:
         """Whether an adjustment description states a tax position (§2.5/FR-06)."""
+
+    def resolve_contested_credit(
+        self, narration: str, candidates: Sequence[ContestedCandidate]
+    ) -> str | None:
+        """Which candidate settlement a contested credit belongs to, or `None`.
+
+        **This is the one read on the money path, and it is opt-in.** FR-09 tier
+        2 keys off an exact amount inside a T+2 window, which is not unique to a
+        settlement; when two settlements contest one credit, `match_cases`
+        demotes both to tier 3 and the batch abstains. This asks whether the
+        narration says which one — the question a human resolves in seconds and
+        no rule in §4.6 can express.
+
+        `None` means "the evidence does not say", and it is the right answer
+        whenever the narration carries no discriminator. Returning `None` is
+        never penalised by a safety metric; returning the wrong settlement is a
+        **false match**, §1.6's primary safety metric, which is precisely why
+        this experiment is worth running with that metric watching.
+
+        The answer is a *selection among candidates the deterministic cascade
+        already validated* — each one already matched on amount and window — so
+        the model narrows a set it did not construct. It still cannot originate
+        an account, an amount, or a settlement, and invariant 1.7.2 holds.
+        """
 
 
 class KeywordSemantics:
@@ -203,6 +258,21 @@ class KeywordSemantics:
             return False
         upper = description.upper()
         return any(marker in upper for marker in TAX_POSITION_MARKERS)
+
+    def resolve_contested_credit(
+        self, narration: str, candidates: Sequence[ContestedCandidate]
+    ) -> str | None:
+        """Always `None` — and that is the honest baseline, not a stub.
+
+        §4.6 defines four tiers and none of them can read a payment-method word
+        out of a narration and line it up against a settlement's recon-line mix.
+        Writing such a rule here would be inventing scope, and it would also
+        quietly hand the keyword arm the very capability the ablation is trying
+        to measure. So the deterministic answer to "which of these two?" is "the
+        evidence available to me does not say", the batch abstains, and
+        `false_match_rate` stays 0 by construction.
+        """
+        return None
 
 
 KEYWORD: NarrationSemantics = KeywordSemantics()
@@ -383,3 +453,94 @@ class LlmSemantics:
         if not description:
             return False
         return self._ask_bool(_TAX_INSTRUCTIONS, description, self._fallback.is_tax_position(description))
+
+    def resolve_contested_credit(
+        self, narration: str, candidates: Sequence[ContestedCandidate]
+    ) -> str | None:
+        """Resolve a tier-2 contest from the narration, or decline to.
+
+        Three things bound what a wrong answer can do, and all three are
+        deliberate given this is the one read that touches the money path:
+
+        1. **Constrained decoding to the candidate ids plus `null`.** The
+           returned settlement id is drawn from an enum built out of *this
+           call's* candidates, so the model cannot name a settlement that was
+           not already validated on amount and window by tier 2.
+        2. **The answer is re-checked against that set** before it is returned,
+           because a schema is a request rather than a guarantee.
+        3. **A miss, a malformed answer, or an unrecognised id all yield
+           `None`**, which routes to the same abstention the deterministic arm
+           produces. The failure direction is always toward abstaining.
+
+        `None` on a genuinely undecidable contest is the correct answer, not a
+        shortfall — `data/contested/` contains both kinds precisely so that
+        under-abstention shows up as a false match rather than hiding.
+        """
+        if len(candidates) < 2:
+            return None
+        ids = [candidate.settlement_id for candidate in candidates]
+        described = "\n".join(
+            f"- {candidate.settlement_id}: settles {', '.join(candidate.payment_methods) or 'unknown'} collections"
+            for candidate in candidates
+        )
+        prompt = (
+            "An inbound bank credit matched more than one settlement on amount and date, "
+            "so the amount cannot say which settlement it pays. Decide from the narration "
+            "alone.\n\nBank narration:\n"
+            f"{narration}\n\nCandidate settlements:\n{described}\n\n"
+            "Return the id of the settlement the narration identifies. Return null if the "
+            "narration carries nothing that distinguishes them — null is the correct answer "
+            "whenever the text does not actually say, and a wrong id books money against the "
+            "wrong settlement.\n"
+            'Answer as {"settlement_id": "<id>"} or {"settlement_id": null}.'
+        )
+        schema = {
+            "type": "object",
+            "properties": {"settlement_id": {"type": ["string", "null"], "enum": [*ids, None]}},
+            "required": ["settlement_id"],
+            "additionalProperties": False,
+        }
+        raw = self._cache.get(prompt)
+        if raw is None:
+            if self._mode is CacheMode.STRICT:
+                self.misses += 1
+                return None
+            if self._client is None:
+                raise ValueError("CacheMode.REFRESH on a cache miss requires a client")
+            raw = self._client.complete(prompt, response_schema=schema)
+            self._cache.put(prompt, raw)
+        try:
+            answer = json.loads(raw).get("settlement_id")
+        except json.JSONDecodeError:
+            self.misses += 1
+            return None
+        if answer not in ids:
+            return None
+
+        # --- The gate. Measured before it was written. ---
+        #
+        # Asked to choose between a UPI settlement and a card settlement, the
+        # model resolves correctly whenever the narration says which — and on
+        # `"NEFT CR RAZORPAY SOFTWARE PVT LTD SETTLEMENT"`, which says nothing,
+        # it answered `setl_CRD01` anyway. That is a coin flip presented as an
+        # answer, and on this read a coin flip books a real credit against the
+        # wrong settlement: a false match, the metric §1.6 ranks first.
+        #
+        # The fix is not a better prompt. It is to stop trusting the answer and
+        # start checking the *justification*: the discriminator the model must
+        # have used has to be visible in the text it read. A settlement is only
+        # allowed to win if one of its own payment methods appears as a word in
+        # the narration — the same shape of check as the counterparty read's
+        # "the name must be a substring of the line", and unfakeable for the
+        # same reason. The model may point at evidence; it may not assert
+        # without it.
+        #
+        # An answer that cannot clear this is not downgraded to a guess, it is
+        # discarded: the result is `None`, which is exactly what the keyword arm
+        # returns, so an ungrounded resolution costs nothing but the abstention
+        # the deterministic path would have produced anyway.
+        chosen = next(candidate for candidate in candidates if candidate.settlement_id == answer)
+        words = set(_ALNUM_TOKEN_RE.findall(narration.upper()))
+        if not any(method.upper() in words for method in chosen.payment_methods):
+            return None
+        return answer
