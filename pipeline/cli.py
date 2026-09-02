@@ -53,6 +53,7 @@ from pipeline.metrics import MetricsReport, RunProvenance
 from pipeline.narration import build_narration_bundles, narrate_batch_llm
 from pipeline.report import build_report_context, render_report_html
 from pipeline.run import run_batch
+from pipeline.semantics import KEYWORD, LlmSemantics, NarrationSemantics
 from pipeline.storage import connect, fetch_ledger_entries
 
 for _stream in (sys.stdout, sys.stderr):
@@ -87,6 +88,20 @@ DEFAULT_SEED = 0
 """Provenance metadata only. This command never generates a batch — see the
 module docstring — so `--seed` records what seed `data_dir` was generated
 with rather than driving any randomness here."""
+
+
+class SemanticsArm(str, Enum):
+    """Which implementation answers the five free-text reads (`pipeline.semantics`).
+
+    Separate from `ClassifierArm` because they are different questions and the
+    §5.4 ablation wants them separable: `--classifier` chooses who assigns a
+    case's exception subtype, `--semantics` chooses who reads the bank's prose
+    underneath that — the gateway/merchant split, reversals, charges, the
+    counterparty read, and the FR-06 tax position. A run can vary either alone.
+    """
+
+    KEYWORD = "keyword"
+    LLM = "llm"
 
 
 class ClassifierArm(str, Enum):
@@ -131,6 +146,7 @@ def run_reconciliation(
     cache_mode: CacheMode,
     seed: int | None,
     git_sha: str | None,
+    semantics_arm: SemanticsArm = SemanticsArm.KEYWORD,
 ) -> tuple[EvalReport, str]:
     """Components 2-9 end to end over `data_dir`, plus the FR-11 report HTML.
 
@@ -149,8 +165,14 @@ def run_reconciliation(
     cache = PromptCache(cache_path)
     client = FireworksClient() if cache_mode is CacheMode.REFRESH else None
 
+    semantics: NarrationSemantics = (
+        KEYWORD
+        if semantics_arm is SemanticsArm.KEYWORD
+        else LlmSemantics(cache, mode=cache_mode, client=client)
+    )
+
     if classifier_arm is ClassifierArm.BASELINE:
-        classifier = classify_batch_baseline
+        classifier = lambda bundles: classify_batch_baseline(bundles, semantics)
     elif classifier_arm is ClassifierArm.HYBRID:
         classifier = lambda bundles: classify_batch_hybrid(
             bundles, cache, mode=cache_mode, client=client, on_cache_miss="fallback"
@@ -168,6 +190,7 @@ def run_reconciliation(
         ledger_entries=ledger_entries,
         snapshot_date=snapshot_date,
         classifier=classifier,
+        semantics=semantics,
     )
 
     narration_bundles = build_narration_bundles(result.cases, result.outcome.outcomes)
@@ -222,6 +245,13 @@ def reconcile(
         DEFAULT_SNAPSHOT_DATE.isoformat(),
         help="Batch snapshot date, ISO 8601. Must match the date `data_dir` was generated with.",
     ),
+    semantics: SemanticsArm = typer.Option(
+        SemanticsArm.KEYWORD.value,
+        help="Who answers the five free-text reads over bank/adjustment prose "
+        "(pipeline.semantics): 'keyword' (literal substrings, the default and "
+        "§5.4's baseline) or 'llm' (constrained, cached). Try 'llm' against "
+        "--data-dir data/heldout_vocab, where the keyword arm cannot complete a run.",
+    ),
     classifier: ClassifierArm = typer.Option(
         ClassifierArm.BASELINE.value,
         help="Classification arm: 'baseline' (deterministic triggers + keyword read), "
@@ -250,6 +280,7 @@ def reconcile(
         data_dir=data_dir,
         snapshot_date=date.fromisoformat(snapshot_date),
         classifier_arm=classifier,
+        semantics_arm=semantics,
         cache_path=cache_path,
         cache_mode=cache_mode,
         seed=seed,

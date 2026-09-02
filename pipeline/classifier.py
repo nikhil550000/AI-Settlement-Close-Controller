@@ -89,6 +89,7 @@ from pipeline.ground_truth import ExceptionSubtype, OutcomeState
 from pipeline.llm_cache import CacheMissError, CacheMode, PromptCache
 from pipeline.llm_client import LLMClient
 from pipeline.predicates import CaseEvidence
+from pipeline.semantics import KEYWORD, NarrationSemantics
 from pipeline.subtype_label import SubtypeLabel
 
 __all__ = [
@@ -211,51 +212,17 @@ def build_evidence_bundles(
 
 # --- The deterministic keyword baseline. ---
 
-_ALNUM_TOKEN_RE = re.compile(r"[A-Z0-9]+")
-
-_BANKING_BOILERPLATE_WORDS = frozenset(
-    {
-        "NEFT", "RTGS", "IMPS", "UPI", "ACH", "ECS",
-        "CR", "DR", "CREDIT", "DEBIT",
-        "TRANSFER", "TRF", "TXN", "PAYMENT", "PMT",
-        "INWARD", "OUTWARD", "IN", "OUT", "BY", "TO", "FROM", "VIA",
-        "REF", "REFERENCE", "NO", "MISC", "FUNDS", "AMT", "ONLINE",
-        "P2A", "P2P", "A2A", "P2M",
-    }
-)
-"""Generic NEFT/RTGS/IMPS bank-statement jargon — real vocabulary any bank
-narration uses, not a list reverse-engineered from this batch's templates.
-The distinction this baseline draws holds because of what these words mean
-(none of them is ever a counterparty's name), the same rule session 3.2 set
-for `pipeline/case_assembly.py`'s keyword sets and session 4.3 restated for
-`pipeline/policy.py`'s tax-position markers."""
-
-_MIN_COUNTERPARTY_TOKEN_LENGTH = 3
-"""Excludes short bank-jargon fragments (e.g. a two-letter code) that slip
-past the boilerplate list without being a plausible name token."""
+# The boilerplate vocabulary and the counterparty read this module used to own
+# now live in `pipeline/semantics.py`, with the four other keyword sets that
+# answer a question about English by testing for a literal substring — the
+# `NarrationSemantics` interface is the same one case assembly and the policy
+# gate now take. `KeywordSemantics.names_counterparty` is this module's former
+# `_identify_counterparty_token`, moved unchanged.
 
 
-def _identify_counterparty_token(narration: str) -> str | None:
-    """The first alphabetic, non-boilerplate token in a narration, or `None`.
-
-    A reference/UTR fragment is excluded by the presence of a digit — a
-    counterparty's name in this domain is never digit-bearing, and every
-    reference number the generator mints is (§4.6's UTR, `bank_ref_no`).
-    This is the entire discriminator §4.2 names: "does the free-text
-    narration identify a counterparty."
-    """
-    for token in _ALNUM_TOKEN_RE.findall(narration.upper()):
-        if any(char.isdigit() for char in token):
-            continue
-        if len(token) < _MIN_COUNTERPARTY_TOKEN_LENGTH:
-            continue
-        if token in _BANKING_BOILERPLATE_WORDS:
-            continue
-        return token
-    return None
-
-
-def classify_case_baseline(bundle: EvidenceBundle) -> ClassificationResult:
+def classify_case_baseline(
+    bundle: EvidenceBundle, semantics: NarrationSemantics = KEYWORD
+) -> ClassificationResult:
     """The deterministic keyword baseline (§5.4's ablation arm; §6.3's disclosed fallback).
 
     Three branches, in order:
@@ -282,7 +249,7 @@ def classify_case_baseline(bundle: EvidenceBundle) -> ClassificationResult:
         )
 
     if bundle.case_kind is CaseKind.ORPHAN and len(bundle.narrations) == 1:
-        keyword = _identify_counterparty_token(bundle.narrations[0])
+        keyword = semantics.names_counterparty(bundle.narrations[0])
         if keyword is not None:
             return ClassificationResult(
                 case_id=bundle.case_id,
@@ -298,11 +265,13 @@ def classify_case_baseline(bundle: EvidenceBundle) -> ClassificationResult:
     )
 
 
-def classify_batch_baseline(bundles: Sequence[EvidenceBundle]) -> list[ClassificationResult]:
+def classify_batch_baseline(
+    bundles: Sequence[EvidenceBundle], semantics: NarrationSemantics = KEYWORD
+) -> list[ClassificationResult]:
     """The baseline over every bundle in a batch. Never raises on well-formed input —
     session 5.1's checkpoint (§6.3): "baseline classifies all ~70 non-auto-close
     cases without crashing.\""""
-    return [classify_case_baseline(bundle) for bundle in bundles]
+    return [classify_case_baseline(bundle, semantics) for bundle in bundles]
 
 
 def classification_distribution(results: Sequence[ClassificationResult]) -> dict[str, int]:

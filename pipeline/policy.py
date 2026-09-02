@@ -60,6 +60,7 @@ from pydantic import BaseModel, ConfigDict
 
 from pipeline.case_assembly import Case, CaseKind
 from pipeline.predicates import CaseEvidence
+from pipeline.semantics import KEYWORD, NarrationSemantics
 from pipeline.schemas import LedgerEntry, RazorpayEntityType, ReconLine
 
 
@@ -86,39 +87,23 @@ class PolicyDecision(BaseModel):
     detail: str
 
 
-_TAX_POSITION_MARKERS: tuple[str, ...] = (
-    "194-O",
-    "194O",
-    "194-H",
-    "194H",
-    "TDS",
-    "INPUT TAX CREDIT",
-    "ITC",
-)
-"""Indian tax-position vocabulary as it appears on a settlement adjustment line.
-
-Chosen from the domain — §2.5 names Sections 194-O and 194-H and "GST
-input tax credit eligibility on MDR" directly, and these are the terms a
-real Razorpay adjustment narration uses for them — and only then checked
-against the generator's own two signatures, in that order. Session 3.2
-established the rule for this kind of keyword set: a distinction that
-holds because of what the words mean, not because of what this batch
-happens to contain.
-"""
+# The tax-position vocabulary this module used to own now lives in
+# `pipeline/semantics.py`, with the four other keyword sets that answer a
+# question about English by testing for a literal substring. See that module's
+# docstring for why they were worth measuring together.
 
 
-def _has_tax_signature(text: str | None) -> bool:
+def _has_tax_signature(text: str | None, semantics: NarrationSemantics = KEYWORD) -> bool:
     if not text:
         return False
-    upper = text.upper()
-    return any(marker in upper for marker in _TAX_POSITION_MARKERS)
+    return semantics.is_tax_position(text)
 
 
 def _capture_date(line: ReconLine) -> date:
     return datetime.fromtimestamp(line.created_at, tz=timezone.utc).date()
 
 
-def _tax_position_decisions(case: Case) -> list[PolicyDecision]:
+def _tax_position_decisions(case: Case, semantics: NarrationSemantics = KEYWORD) -> list[PolicyDecision]:
     """FR-06: an adjustment line whose description carries a tax-position signature.
 
     §4.2 fixes the detection surface as the adjustment line's own text.
@@ -130,7 +115,7 @@ def _tax_position_decisions(case: Case) -> list[PolicyDecision]:
     cited = tuple(
         line.entity_id
         for line in case.recon_lines
-        if line.type is RazorpayEntityType.ADJUSTMENT and _has_tax_signature(line.description)
+        if line.type is RazorpayEntityType.ADJUSTMENT and _has_tax_signature(line.description, semantics)
     )
     if not cited:
         return []
@@ -211,10 +196,17 @@ def evaluate_policy(
     case: Case,
     evidence: CaseEvidence,
     entries_by_reference: Mapping[str, Sequence[LedgerEntry]],
+    *,
+    semantics: NarrationSemantics = KEYWORD,
 ) -> tuple[PolicyDecision, ...]:
-    """Every §2.5 exclusion that applies to one case. Empty means the auto path stays open."""
+    """Every §2.5 exclusion that applies to one case. Empty means the auto path stays open.
+
+    `semantics` answers only the FR-06 tax-position read; REV-11's date-only
+    exclusion is arithmetic over dates and takes no view on text.
+    """
     return tuple(
-        _tax_position_decisions(case) + _date_only_decisions(case, evidence, entries_by_reference)
+        _tax_position_decisions(case, semantics)
+        + _date_only_decisions(case, evidence, entries_by_reference)
     )
 
 

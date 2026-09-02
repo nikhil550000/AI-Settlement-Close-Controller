@@ -63,15 +63,13 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.schemas import BankLine, ReconLine, Settlement
+from pipeline.semantics import KEYWORD, NarrationSemantics
 
-_RAZORPAY_MARKER = "RAZORPAY"
-"""Every settlement-credit narration names one of `SETTLEMENT_PARTIES` (generator/narration.py), all of which contain this."""
-
-_BANK_CHARGE_KEYWORDS = ("CHARGE", "FEE")
-"""§3.6's bank-charge narration pool reads as a fee/charge line in plain English; these two words cover all of it."""
-
-_REVERSAL_KEYWORDS = ("REVERSAL", "RETURN", "REV-", "RET-")
-"""A reversal/return narration names itself as one, in every §3.6 reversal template."""
+# The three keyword vocabularies this module used to own now live in
+# `pipeline/semantics.py`, alongside the two that `pipeline/policy.py` and
+# `pipeline/classifier.py` owned, because all five are the same kind of thing:
+# a question about English answered by a literal-substring test. See that
+# module's docstring for what measuring them together revealed.
 
 _REFERENCE_TOKEN_RE = re.compile(r"[A-Z0-9]{8,}")
 """§4.6 tier 1's own token shape: an alphanumeric run of length >= 8.
@@ -127,9 +125,20 @@ def assemble_cases(
     settlements: Sequence[Settlement],
     recon_lines: Sequence[ReconLine],
     bank_lines: Sequence[BankLine],
+    *,
+    semantics: NarrationSemantics = KEYWORD,
 ) -> list[Case]:
-    """Every reconciliation case in the batch: settlement-anchored cases, then orphan cases."""
-    return assemble_settlement_anchored_cases(settlements, recon_lines) + assemble_orphan_cases(bank_lines)
+    """Every reconciliation case in the batch: settlement-anchored cases, then orphan cases.
+
+    `semantics` answers the three free-text questions this component asks of a
+    bank narration — is this the gateway paying us, is this a bank charge, is
+    this a reversal. It defaults to `pipeline.semantics.KEYWORD`, which is the
+    literal-substring logic this module used to hold inline, so the default
+    call is behaviour-identical to every run before it existed.
+    """
+    return assemble_settlement_anchored_cases(settlements, recon_lines) + assemble_orphan_cases(
+        bank_lines, semantics=semantics
+    )
 
 
 def assemble_settlement_anchored_cases(
@@ -152,13 +161,15 @@ def assemble_settlement_anchored_cases(
     ]
 
 
-def assemble_orphan_cases(bank_lines: Sequence[BankLine]) -> list[Case]:
+def assemble_orphan_cases(
+    bank_lines: Sequence[BankLine], *, semantics: NarrationSemantics = KEYWORD
+) -> list[Case]:
     """Orphan cases from bank lines with no settlement-credit narration, per this module's docstring."""
-    residual = [line for line in bank_lines if not _is_razorpay_credit(line)]
+    residual = [line for line in bank_lines if not _is_razorpay_credit(line, semantics)]
 
-    charge_ids = {line.line_id for line in residual if _is_bank_charge(line)}
+    charge_ids = {line.line_id for line in residual if _is_bank_charge(line, semantics)}
     debits = [line for line in residual if line.withdrawal_paise > 0 and line.line_id not in charge_ids]
-    reversal_candidates = [line for line in debits if is_reversal_shaped(line)]
+    reversal_candidates = [line for line in debits if is_reversal_shaped(line, semantics)]
     # Any other debit (line.line_id not in charge_ids and not reversal-shaped) is
     # plain outbound noise: never a case, and it needs no further handling.
 
@@ -178,16 +189,15 @@ def assemble_orphan_cases(bank_lines: Sequence[BankLine]) -> list[Case]:
     return cases
 
 
-def _is_razorpay_credit(line: BankLine) -> bool:
-    return line.deposit_paise > 0 and _RAZORPAY_MARKER in line.narration.upper()
+def _is_razorpay_credit(line: BankLine, semantics: NarrationSemantics = KEYWORD) -> bool:
+    return line.deposit_paise > 0 and semantics.is_gateway_credit(line.narration)
 
 
-def _is_bank_charge(line: BankLine) -> bool:
-    narration = line.narration.upper()
-    return line.withdrawal_paise > 0 and any(keyword in narration for keyword in _BANK_CHARGE_KEYWORDS)
+def _is_bank_charge(line: BankLine, semantics: NarrationSemantics = KEYWORD) -> bool:
+    return line.withdrawal_paise > 0 and semantics.is_bank_charge(line.narration)
 
 
-def is_reversal_shaped(line: BankLine) -> bool:
+def is_reversal_shaped(line: BankLine, semantics: NarrationSemantics = KEYWORD) -> bool:
     """Whether a withdrawal's narration names itself a reversal/return.
 
     Public because `pipeline/predicates.py` asks the same question when it
@@ -195,8 +205,7 @@ def is_reversal_shaped(line: BankLine) -> bool:
     component that decided this line becomes its own case and the
     component that says why cannot disagree about what a reversal is.
     """
-    narration = line.narration.upper()
-    return line.withdrawal_paise > 0 and any(keyword in narration for keyword in _REVERSAL_KEYWORDS)
+    return line.withdrawal_paise > 0 and semantics.is_reversal(line.narration)
 
 
 def reference_tokens(narration: str) -> set[str]:

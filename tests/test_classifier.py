@@ -225,9 +225,9 @@ def test_classification_distribution_sums_to_the_eligible_count() -> None:
     ],
 )
 def test_opaque_narrations_identify_no_counterparty(narration: str) -> None:
-    from pipeline.classifier import _identify_counterparty_token
+    from pipeline.semantics import KEYWORD
 
-    assert _identify_counterparty_token(narration) is None
+    assert KEYWORD.names_counterparty(narration) is None
 
 
 @pytest.mark.parametrize(
@@ -240,6 +240,6 @@ def test_opaque_narrations_identify_no_counterparty(narration: str) -> None:
     ],
 )
 def test_named_narrations_identify_a_counterparty(narration: str) -> None:
-    from pipeline.classifier import _identify_counterparty_token
+    from pipeline.semantics import KEYWORD
 
-    assert _identify_counterparty_token(narration) is not None
+    assert KEYWORD.names_counterparty(narration) is not None

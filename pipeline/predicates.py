@@ -96,6 +96,7 @@ from pipeline.accounts import (
     Account,
 )
 from pipeline.case_assembly import Case, CaseKind, is_reversal_shaped, reference_tokens
+from pipeline.semantics import KEYWORD, NarrationSemantics
 from pipeline.ground_truth import ExceptionSubtype
 from pipeline.matcher import MatchTier
 from pipeline.schemas import LedgerEntry, RazorpayEntityType, ReconLine, Settlement, SettlementStatus
@@ -396,7 +397,7 @@ def _settlement_anchored_triggers(case: Case, settlement: Settlement) -> list[Su
     return triggers
 
 
-def _orphan_triggers(case: Case) -> list[SubtypeTrigger]:
+def _orphan_triggers(case: Case, semantics: NarrationSemantics = KEYWORD) -> list[SubtypeTrigger]:
     """§3.3's two structurally-decidable orphan triggers.
 
     The third orphan subtype, `UNMATCHED_INBOUND_CREDIT`, is Slot A's
@@ -434,7 +435,7 @@ def _orphan_triggers(case: Case) -> list[SubtypeTrigger]:
     # REVERSAL_UNMATCHED: "Bank reversal with no matching prior credit in the batch."
     if len(case.bank_lines) == 1:
         (line,) = case.bank_lines
-        if int(line.withdrawal_paise) > 0 and is_reversal_shaped(line):
+        if int(line.withdrawal_paise) > 0 and is_reversal_shaped(line, semantics):
             triggers.append(
                 SubtypeTrigger(
                     case_id=case.case_id,
@@ -449,7 +450,9 @@ def _orphan_triggers(case: Case) -> list[SubtypeTrigger]:
 # --- Evaluation. ---
 
 
-def evaluate_case(case: Case, ledger_index: LedgerIndex) -> CaseEvidence:
+def evaluate_case(
+    case: Case, ledger_index: LedgerIndex, semantics: NarrationSemantics = KEYWORD
+) -> CaseEvidence:
     """Evaluate every §3.4 predicate and every §3.3 subtype trigger against one case.
 
     Raises `PredicateOverlapError` if two template predicates fire on the
@@ -457,7 +460,7 @@ def evaluate_case(case: Case, ledger_index: LedgerIndex) -> CaseEvidence:
     production code rather than left to the test suite.
     """
     if case.kind is CaseKind.ORPHAN:
-        return CaseEvidence(case_id=case.case_id, subtype_triggers=tuple(_orphan_triggers(case)))
+        return CaseEvidence(case_id=case.case_id, subtype_triggers=tuple(_orphan_triggers(case, semantics)))
 
     settlement = case.settlement
     if settlement is None:
@@ -500,10 +503,21 @@ def evaluate_case(case: Case, ledger_index: LedgerIndex) -> CaseEvidence:
     )
 
 
-def evaluate_cases(cases: Sequence[Case], ledger_entries: Sequence[LedgerEntry]) -> list[CaseEvidence]:
-    """Evaluate every case in the batch. Cases must already carry the matcher's output."""
+def evaluate_cases(
+    cases: Sequence[Case],
+    ledger_entries: Sequence[LedgerEntry],
+    *,
+    semantics: NarrationSemantics = KEYWORD,
+) -> list[CaseEvidence]:
+    """Evaluate every case in the batch. Cases must already carry the matcher's output.
+
+    `semantics` answers the one free-text question a trigger asks — §3.3's
+    `REVERSAL_UNMATCHED` read, which must be the same notion of "reversal"
+    `pipeline.case_assembly` used to raise the case, or the component that
+    grouped the line and the component that says why would disagree.
+    """
     ledger_index = index_ledger_entries(ledger_entries)
-    return [evaluate_case(case, ledger_index) for case in cases]
+    return [evaluate_case(case, ledger_index, semantics) for case in cases]
 
 
 def template_hit_distribution(evidences: Sequence[CaseEvidence]) -> dict[str, int]:

@@ -38,6 +38,7 @@ from pipeline.instantiator import CandidateJournalEntry, instantiate_cases
 from pipeline.matcher import match_cases, match_tier_distribution
 from pipeline.predicates import CaseEvidence, evaluate_cases
 from pipeline.schemas import BankLine, LedgerEntry, ReconLine, Settlement
+from pipeline.semantics import KEYWORD, NarrationSemantics
 
 KNOWN_GAPS: tuple[str, ...] = (
     "UNMATCHED_INBOUND_CREDIT is unassigned only when run_batch() is called with no "
@@ -121,6 +122,7 @@ def run_batch(
     snapshot_date: date,
     seed_ledger_first: bool = True,
     classifier: Callable[[Sequence[EvidenceBundle]], Sequence[ClassificationResult]] | None = None,
+    semantics: NarrationSemantics = KEYWORD,
 ) -> RunResult:
     """Components 2-8 over one batch, against the ledger held in `conn`.
 
@@ -150,13 +152,13 @@ def run_batch(
         seed_ledger(conn, ledger_entries)
 
     cases = match_cases(
-        assemble_cases(settlements, recon_lines, bank_lines),
+        assemble_cases(settlements, recon_lines, bank_lines, semantics=semantics),
         bank_lines,
         snapshot_date=snapshot_date,
     )
-    evidences = evaluate_cases(cases, ledger_entries)
+    evidences = evaluate_cases(cases, ledger_entries, semantics=semantics)
     candidates = instantiate_cases(evidences, cases, ledger_entries)
-    outcome = apply_batch(conn, cases, evidences, candidates, posting_date=snapshot_date)
+    outcome = apply_batch(conn, cases, evidences, candidates, posting_date=snapshot_date, semantics=semantics)
 
     classifications: tuple[ClassificationResult, ...] = ()
     if classifier is not None:
@@ -170,6 +172,7 @@ def run_batch(
             candidates,
             posting_date=snapshot_date,
             classifications=by_case_id,
+            semantics=semantics,
         )
         outcome = _carry_forward_validations(outcome, second_pass)
 

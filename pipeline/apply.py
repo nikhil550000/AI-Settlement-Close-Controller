@@ -64,6 +64,7 @@ from pipeline.ground_truth import (
 )
 from pipeline.instantiator import CandidateJournalEntry
 from pipeline.policy import PolicyDecision, evaluate_policy
+from pipeline.semantics import KEYWORD, NarrationSemantics
 from pipeline.predicates import CaseEvidence
 from pipeline.reconciliation import case_residual_paise
 from pipeline.schemas import LedgerEntry, LedgerSource
@@ -368,6 +369,7 @@ def apply_case(
     posting_date: date,
     known_record_ids: frozenset[str],
     classification: SubtypeLabel | None = None,
+    semantics: NarrationSemantics = KEYWORD,
 ) -> CaseOutcome:
     """Validate, apply, re-reconcile and assign a terminal state for one case.
 
@@ -380,7 +382,7 @@ def apply_case(
     that can change the outcome; every other label is recorded on
     `CaseOutcome.classified_subtype` without affecting `state`.
     """
-    policy_decisions = evaluate_policy(case, evidence, state.by_reference)
+    policy_decisions = evaluate_policy(case, evidence, state.by_reference, semantics=semantics)
     triggered = tuple(trigger.subtype for trigger in evidence.subtype_triggers)
     classified_unmatched_inbound_credit = classification is SubtypeLabel.UNMATCHED_INBOUND_CREDIT
 
@@ -598,6 +600,7 @@ def apply_batch(
     *,
     posting_date: date,
     classifications: Mapping[str, SubtypeLabel] | None = None,
+    semantics: NarrationSemantics = KEYWORD,
 ) -> BatchOutcome:
     """Run component 8 over a whole batch. `conn` must already hold the merchant ledger.
 
@@ -629,6 +632,7 @@ def apply_batch(
             posting_date=posting_date,
             known_record_ids=known_record_ids,
             classification=classifications.get(case.case_id),
+            semantics=semantics,
         )
         outcomes.append(outcome.model_copy(update={"exception_class": _exception_class(case, outcome)}))
 
