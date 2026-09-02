@@ -119,6 +119,21 @@ class Case(BaseModel):
     in_settlement_window: bool | None = None
     """Set only for a tier-3 (no-match) case: whether `snapshot_date` still falls
     inside the settlement's T+2 working-day window (§3.3)."""
+    contested_bank_lines: tuple[BankLine, ...] = ()
+    """Credits this settlement claimed at tier 2 and lost to §4.6's tie rule.
+
+    Separate from `bank_lines` on purpose. A demoted claimant is **not** matched
+    to this credit — that is the whole point of the demotion — so putting the
+    line back in `bank_lines` would hand every downstream reader (predicates,
+    instantiator, the residual) evidence the matcher just ruled inadmissible.
+    But dropping it entirely is what made Rs 12,693.20 of real bank credit
+    disappear from `data/contested/` into no case and no metric at all: the
+    credit narrates the gateway, so `assemble_orphan_cases` never considered it,
+    and after demotion no settlement held it either.
+
+    So the line is carried here: visible to the report and to
+    `pipeline.bank_accounting`, invisible to everything that prices a case. It
+    is evidence *about* the ambiguity, not evidence *for* the settlement."""
 
 
 def assemble_cases(
@@ -177,7 +192,7 @@ def assemble_orphan_cases(
     dup_pairs, dup_ids = _find_duplicate_credit_pairs(credit_candidates)
     unpaired_credits = [line for line in credit_candidates if line.line_id not in dup_ids]
 
-    self_matched_pairs, self_matched_ids = _find_self_matching_reversal_pairs(
+    self_matched_pairs, self_matched_ids = find_self_matching_reversal_pairs(
         reversal_candidates, unpaired_credits
     )
     unmatched_reversals = [line for line in reversal_candidates if line.line_id not in self_matched_ids]
@@ -237,7 +252,7 @@ def _find_duplicate_credit_pairs(
     return pairs, paired_ids
 
 
-def _find_self_matching_reversal_pairs(
+def find_self_matching_reversal_pairs(
     reversal_lines: Sequence[BankLine], credit_lines: Sequence[BankLine]
 ) -> tuple[list[tuple[BankLine, BankLine]], set[str]]:
     """A reversal whose narration shares a reference token with some credit's narration is a wash, not a case."""

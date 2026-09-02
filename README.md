@@ -42,8 +42,9 @@ flowchart TB
 
     TERM["<b>terminal state</b> · §1.3 — exactly one per case<br/>AUTO_MATCHED · AUTO_CLOSED · ABSTAINED<br/>EXTERNAL_ACTION_REQUIRED · REVIEW_REQUIRED"]
     GT["<b>ground_truth.jsonl</b><br/><i>evaluation-only — never fed to the pipeline</i>"]
-    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts → one HTML file"]
+    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts + bank-line<br/>accounting → one HTML file"]
     SEM["<b>S · Semantics</b><br/>six free-text reads — five routing,<br/>one on the money path<br/><i>KeywordSemantics ⇄ LlmSemantics</i>"]
+    ACCT["<b>bank-line accounting</b><br/>every bank line in exactly one disposition<br/><i>denominated in source records, not cases —<br/>the unaccounted bucket must always be empty</i>"]
 
     G -.->|"disk is the only channel<br/>§4.1 import guard"| SRC
     SRC --> C1
@@ -57,6 +58,9 @@ flowchart TB
     C8 --> TERM
     TERM --> C9
     GT --> C9
+    C8 --> ACCT
+    SRC -.->|"the raw statement"| ACCT
+    ACCT --> C9
 
     SEM -.-> C2
     SEM -.-> C3
@@ -69,7 +73,7 @@ flowchart TB
     classDef data fill:#f4f5f7,stroke:#9aa3b0,stroke-width:1px,color:#1b1f24
     classDef state fill:#eaf7f0,stroke:#1e8e5a,stroke-width:2px,color:#1b1f24
 
-    class C1,C2,C3,C4,C6,C7,C8,C9 det
+    class C1,C2,C3,C4,C6,C7,C8,C9,ACCT det
     class SEM,C5 model
     class G,SRC,GT data
     class TERM state
@@ -79,7 +83,7 @@ flowchart TB
 
 ### Where the model is allowed to act, exactly
 
-Invariant 1.7.2: the model may *classify* and may *write prose*; it may never originate an account, an amount, or a narration on the automated path. Everything that reaches the ledger — which account, which amount, which template — is computed by deterministic code the model never touches. There are four model-touching surfaces, and each is separately switchable and separately measured:
+Invariant 1.7.2: the model may *classify* and may *write prose*; it may never originate an account, an amount, or a narration on the automated path. Everything that reaches the ledger — which account, which amount, which template — is computed by deterministic code the model never touches. There are five model-touching surfaces, and each is separately switchable and separately measured:
 
 | surface | module | what it decides | graded |
 |---|---|---|---|
@@ -175,12 +179,14 @@ Both reach `AUTO_MATCHED` on one credit that can belong to at most one of them �
 
 **Then it became the experiment.** A contested credit is the first place the deterministic path abstains not from caution but because no rule in §4.6 *can* express the discriminator — while a human reads it in seconds. `data/contested/` is twelve hand-authored cases: two pairs whose narration names the payment method the settlement actually settles, two pairs whose narration says nothing, and four uncontested controls.
 
-| arm | state accuracy | contests resolved | `false_match_rate` |
-|---|---|---|---|
-| `--semantics keyword` | 6/12 = 0.5000 | 0 of 2 | **0/12** |
-| `--semantics llm` | 8/12 = 0.6667 | 2 of 2 | **0/12** |
+| arm | state accuracy | contests resolved | bank credit left unattached | `false_match_rate` |
+|---|---|---|---|---|
+| `--semantics keyword` | 6/12 = 0.5000 | 0 of 2 | Rs 12,693.20 (4 credits) | **0/12** |
+| `--semantics llm` | 8/12 = 0.6667 | 2 of 2 | Rs 5,370.20 (2 credits) | **0/12** |
 
 The model arm is strictly additive — it matched everything the keyword arm did — and the two it gains are exactly the decidable contests.
+
+**The fourth column is the result restated in the unit that matters.** Two cases is a thin number to hang a claim on. The same result denominated in money is that the grounded read returns **Rs 7,323.00 of real bank credit to a settlement** that the deterministic arm leaves attached to nothing — and the credits it still cannot place are a strict subset of the ones the keyword arm cannot. `tests/test_bank_accounting.py` asserts both the subset relation and the rupee figure, and that resolving a contest moves money between dispositions without creating or destroying any.
 
 **The part worth reading is what happened before the gate existed.** Measured first, on a narration that names nothing (`"NEFT CR RAZORPAY SOFTWARE PVT LTD SETTLEMENT"`), the model answered a settlement id anyway. 5 of 6. A coin flip presented as an answer — and on this read a coin flip books a real credit against the wrong settlement.
 
@@ -230,7 +236,7 @@ Other entry points:
 uv run generate --seed 0 --out-dir data/reference          # regenerate the reference batch
 uv run python tools/build_heldout_vocab_batch.py data/reference data/heldout_vocab
 uv run python tools/infer_bank_profile.py data/unseen_bank/kotak_statement.csv
-uv run pytest                                               # 602 passed, 1 skipped
+uv run pytest                                               # 611 passed, 1 skipped
 ```
 
 ## The agentic surface: bank-profile inference
@@ -263,7 +269,27 @@ Ground truth is emitted from the injection plan when each case is planted, never
 
 ## Metrics and evaluation
 
-The full §1.6 metric surface is computed against ground truth in `pipeline/metrics.py`. Every rate carries its own integer numerator and denominator (never a bare float), and an undefined metric reports as `undefined`, never as `0.0`. A macro average is a `MacroRate`, not a `Rate` — a mean of ratios is not a ratio, and expressing it as one produced a committed artifact that read `{"numerator": 7, "denominator": 7, "value": 0.80}`. Two §5.2 confusion matrices, a per-subtype breakdown, and the §5.5 threshold review are in `pipeline/eval_report.py`; all five §1.8 artifacts render into one self-contained HTML file (`pipeline/report.py`, FR-11).
+The full §1.6 metric surface is computed against ground truth in `pipeline/metrics.py`. Every rate carries its own integer numerator and denominator (never a bare float), and an undefined metric reports as `undefined`, never as `0.0`. A macro average is a `MacroRate`, not a `Rate` — a mean of ratios is not a ratio, and expressing it as one produced a committed artifact that read `{"numerator": 7, "denominator": 7, "value": 0.80}`. Two §5.2 confusion matrices, a per-subtype breakdown, and the §5.5 threshold review are in `pipeline/eval_report.py`; all five §1.8 artifacts render into one self-contained HTML file (`pipeline/report.py`, FR-11), alongside a sixth section §1.8 does not ask for — see **bank-line accounting** below.
+
+### Bank-line accounting: the one figure denominated in source records
+
+Every §1.6 metric is denominated in **cases**. That is the right unit for grading, and it has one blind spot: a bank line that reaches no case is invisible to all of them. `data/contested/` shipped that way — Rs 12,693.20 of real bank credit in no case, no metric and no report. Four credits narrate the gateway, so `assemble_orphan_cases` never considered them; FR-09 tier-2 demotion then dropped them from every settlement that had claimed them. Every individual decision was correct and safe. The batch simply stopped adding up, and **no test could see it**, because there was no metric in the unit the loss occurred in.
+
+`pipeline/bank_accounting.py` closes that. It is not a §1.6 metric and grades nothing against ground truth — it is a **partition proof**. Every bank line lands in exactly one disposition, and `unaccounted` is the bucket that must always be empty:
+
+| disposition | reference batch | what it means |
+|---|---|---|
+| `settlement_evidence` | 98 lines, Rs 20,68,915.10 | matched to a settlement by FR-09's cascade |
+| `orphan_evidence` | 28 lines, Rs 37,634.69 | evidence on an orphan case (§1.2, §3.6) |
+| `contested_unawarded` | 0 | claimed by 2+ settlements at tier 2, awarded to none (§4.6) |
+| `bank_charge` | 20 lines | §3.6: bank charges stay noise, not cases |
+| `self_matched_reversal` | 12 lines, Rs 6,724.03 | a credit and its own reversal netting to a wash (REV-18) |
+| `outbound_noise` | 18 lines | an ordinary debit to an unrelated party |
+| **`unaccounted`** | **0** | **reachable by no rule — a defect, and the assertion that matters** |
+
+176 lines in, 176 placed. It renders as section 6 of the FR-11 report, ships in `metrics.json`, and `tests/test_bank_accounting.py` asserts the partition is total on all four committed batches. The dispositions are read off the pipeline's own decisions — `is_reversal_shaped`, `find_self_matching_reversal_pairs` and the semantics surface are imported from the modules that made the call, never re-derived, because a drifted second copy would report a clean partition over a batch that no longer has one.
+
+**What it is honest about.** It does not resolve a contested credit; it makes one impossible to lose. A non-zero `contested_unawarded` is the correct outcome of genuinely ambiguous evidence, not a bug — but it is now a rupee figure a reviewer can act on rather than an absence nobody can see.
 
 **Measured at seed 0, the shipped arms (`--semantics keyword --classifier baseline`), nothing tuned in response to it:**
 
@@ -307,7 +333,7 @@ Note the contrast with the semantics ablation above, which is the actual lesson:
 
 ## What broke, and how it was recovered
 
-`FAILURES.md` is the record: nine incidents with what broke, how it was found, the root cause, and the guard that stops it recurring — including a `UNIQUE` constraint that made `AUTO_CLOSED` unreachable for all 50 cases, nine ground-truth labels no component could ever reach, and the adversarial review that found this repository shipping, pinning and documenting the arm that measures worst.
+`FAILURES.md` is the record: ten incidents with what broke, how it was found, the root cause, and the guard that stops it recurring — including a `UNIQUE` constraint that made `AUTO_CLOSED` unreachable for all 50 cases, nine ground-truth labels no component could ever reach, the adversarial review that found this repository shipping, pinning and documenting the arm that measures worst, and **Rs 12,693.20 of bank credit that went missing without moving a single metric**, because every rate in §1.6 is denominated in cases and the loss happened in source records.
 
 ## Repository layout
 
@@ -326,7 +352,8 @@ AI Settlement Close Controller/
 ├── pipeline/                   # the graded path — MUST NOT import generator/, ever
 │   ├── cli.py                  #   `uv run reconcile` — FR-10's single command
 │   ├── run.py                  #   components 2-8, composed end to end
-│   ├── semantics.py            #   the five free-text reads, keyword and LLM arms
+│   ├── semantics.py            #   the six free-text reads, keyword and LLM arms
+│   ├── bank_accounting.py      #   where every bank line went — the partition proof
 │   ├── adapters/inference.py   #   FR-08 profile inference: propose -> verify -> repair
 │   ├── metrics.py / eval_report.py / report.py    # component 9 (§1.6, §5.2, FR-11)
 │   └── ...                     #   matcher, predicates, instantiator, validator, apply, classifier, narration
@@ -339,6 +366,7 @@ AI Settlement Close Controller/
 ├── tests/
 │   ├── test_import_guard.py    # static analysis: pipeline/ never imports generator/
 │   ├── test_reproduce.py       # NFR-01/NFR-06: real clean-clone, byte-identical metrics
+│   ├── test_bank_accounting.py # the partition is total; no bank line can vanish
 │   └── ...                     # one file per component/session
 └── data/
     ├── reference/              # committed seed-0 reference batch (FR-12)
@@ -356,7 +384,7 @@ AI Settlement Close Controller/
 ## Known limitations
 
 - **Both ablation batches were designed by the author knowing where the deterministic path would break.** The keyword lists and the FR-09 cascade both predate them, so neither is tuned-to-fail — but the *axes* (vocabulary drift, amount collision) were chosen deliberately. They demonstrate that the mechanisms are real; they do not establish how often either occurs in a real merchant's bank feed.
-- **Contested credits currently fall out of the batch entirely.** The four contested credits narrate the gateway, so `assemble_orphan_cases` excludes them; after tier-2 demotion no settlement holds them either. Rs 12,693.20 of real bank credit is attached to nothing and appears in no case and no metric. Safe but invisible — it should be raised as an ambiguity in its own right, and is not.
+- **Bank-line accounting reports where money went; it does not resolve a contested credit.** A credit two settlements both claim still ends unattached — correctly, since no §4.6 tier can say which owns it. What changed is that it is now counted and named rather than silently absent. Resolving it needs either the model arm's grounded read or a human.
 - **`assign_state` reads the books-versus-evidence residual, not the matcher's.** So a contested settlement with accrual-clean books is `AUTO_MATCHED` on residual alone regardless of match tier, and only a fired trigger moves it. Every contested case in `data/contested/` is therefore placed past its T+2 window so `BANK_CREDIT_OVERDUE` can fire; inside the window the batch would measure nothing. That coupling is a design smell the fixture exposed and did not fix.
 - **The reference batch contains no irreducible ambiguity, so it cannot discriminate between arms.** A keyword matcher scores 1.0000 across six seeds. `data/heldout_vocab/` exists because of this, and it varies *vocabulary* rather than *structure* — a batch whose correct label is genuinely undecidable from structure alone is still unbuilt.
 - **The held-out-vocabulary batch is a rewrite of one seed, not an independent draw.** It shares the reference batch's arithmetic and case allocation exactly; it tests generalization across surface forms only.

@@ -32,6 +32,7 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.apply import BatchOutcome, CaseOutcome, apply_batch, seed_ledger
+from pipeline.bank_accounting import BankLineAccounting, account_bank_lines
 from pipeline.case_assembly import Case, assemble_cases
 from pipeline.classifier import ClassificationResult, EvidenceBundle, build_evidence_bundles
 from pipeline.instantiator import CandidateJournalEntry, instantiate_cases
@@ -104,6 +105,12 @@ class RunResult(BaseModel):
     """Component 5's per-case output, when `run_batch` was given a `classifier`.
     Empty when it was not — the same "no classifier, no change" rule `apply_batch`
     follows for its own `classifications` parameter."""
+    bank_accounting: BankLineAccounting
+    """Where every bank line went (`pipeline.bank_accounting`). Computed here
+    because this is the one place that holds both the matched cases and the raw
+    `bank_lines` they were drawn from — the partition needs both, and asking a
+    later component to re-load the statement to check it would be the second
+    copy of a rule this repository single-sources everywhere else."""
 
     def match_tier_distribution(self) -> dict[int, int]:
         return match_tier_distribution(self.cases)
@@ -183,4 +190,5 @@ def run_batch(
         candidates=tuple(candidates),
         outcome=outcome,
         classifications=classifications,
+        bank_accounting=account_bank_lines(bank_lines, cases, semantics=semantics),
     )

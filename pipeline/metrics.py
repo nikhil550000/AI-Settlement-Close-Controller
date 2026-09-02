@@ -56,6 +56,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.apply import CaseOutcome
+from pipeline.bank_accounting import BankLineAccounting
 from pipeline.case_assembly import Case, CaseKind
 from pipeline.exception_class import OPERATIONAL_SUBTYPES
 from pipeline.ground_truth import (
@@ -448,6 +449,20 @@ class MetricsReport(BaseModel):
     auto_applied_entry_count: int
     """`auto_close_precision`'s denominator, restated as a plain integer."""
 
+    bank_line_accounting: BankLineAccounting | None = None
+    """Where every bank line went (`pipeline.bank_accounting`).
+
+    Not a §1.6 metric and not graded against ground truth — every §1.6 rate is
+    denominated in **cases**, and this is the one figure denominated in *source
+    records*, which is exactly the gap a bank line reaching no case fell through.
+    It lives here rather than beside `PerformanceMetrics` because, unlike a
+    wall-clock read, it is a deterministic function of the run and so belongs
+    inside the artifact NFR-06 compares byte-for-byte.
+
+    Optional so that every caller predating it — and every test that builds a
+    `MetricsReport` directly — still constructs one; `compute_metrics` fills it
+    whenever it is given the batch's bank lines."""
+
     provenance: RunProvenance
 
 
@@ -621,6 +636,7 @@ def compute_metrics(
     ground_truth: Sequence[GroundTruthCase],
     *,
     provenance: RunProvenance | None = None,
+    bank_line_accounting: BankLineAccounting | None = None,
 ) -> MetricsReport:
     """The §1.6 surface for one run.
 
@@ -684,6 +700,7 @@ def compute_metrics(
     total_paise = sum(case_value_paise(by_case[case_id]) for case_id in by_outcome)
 
     return MetricsReport(
+        bank_line_accounting=bank_line_accounting,
         total_cases=total,
         match_rate=match_rate,
         auto_match_recall=auto_match_recall,

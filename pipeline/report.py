@@ -392,6 +392,7 @@ footer.report-footer { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem
 .summary .tile.neutral .stat { color: var(--abstained); }
 p.summary-note { max-width: 90ch; color: var(--muted); font-size: 0.83rem;
   margin: 0 0 1.25rem; }
+tr.unaccounted td, p.unaccounted { color: var(--bad); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -648,6 +649,48 @@ is over auto-applied entries, so the two are not complements of one another (§1
   </div>
 </section>
 
+{% if m.bank_line_accounting %}
+{% set acct = m.bank_line_accounting %}
+<section id="bank-accounting">
+  <h2>6. Bank-line accounting</h2>
+  <p class="section-note">Every §1.6 metric is denominated in <em>cases</em>. This one is
+  denominated in <em>source records</em> — which is the gap a bank line reaching no case
+  falls through. Each of the batch's {{ acct.total_lines }} bank lines lands in exactly one
+  disposition below, and <code>unaccounted</code> must always be empty.</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>disposition</th><th>lines</th><th>credit value</th><th>what it means</th></tr></thead>
+    <tbody>
+    {% for key, label, meaning in bank_disposition_rows %}
+      <tr{% if key == "unaccounted" and acct.counts[key] %} class="unaccounted"{% endif %}>
+        <td>{{ label }}</td>
+        <td>{{ acct.counts[key] }}</td>
+        <td>{{ paise(acct.credit_paise[key]) }}</td>
+        <td>{{ meaning }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if acct.contested_unawarded_line_ids %}
+  <p class="section-note"><strong>{{ acct.contested_unawarded_line_ids | length }} credit(s),
+  {{ paise(acct.contested_unawarded_paise) }}, claimed by more than one settlement at FR-09
+  tier 2 and awarded to none of them</strong> (§4.6: a tie is not a match). This is real money
+  a human must resolve, and it belongs to no case by construction — which is exactly why it is
+  reported here rather than left to a case-denominated metric that cannot see it:
+  {{ acct.contested_unawarded_line_ids | join(", ") }}.</p>
+  {% endif %}
+
+  {% if not acct.is_total %}
+  <p class="section-note unaccounted"><strong>{{ acct.unaccounted_line_ids | length }} bank
+  line(s) reached no case and no noise rule.</strong> This is a defect, not a finding:
+  {{ acct.unaccounted_line_ids | join(", ") }}.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 </main>
 
 <footer class="report-footer">
@@ -745,6 +788,23 @@ def _render_validations_html(validations: Sequence[ValidationReport]) -> str:
     return f'<strong>validations:</strong><ul>{"".join(items)}</ul>'
 
 
+BANK_DISPOSITION_ROWS: tuple[tuple[str, str, str], ...] = (
+    ("settlement_evidence", "settlement evidence", "matched to a settlement by FR-09's cascade"),
+    ("orphan_evidence", "orphan evidence", "evidence on an orphan case (§1.2, §3.6)"),
+    ("contested_unawarded", "contested, unawarded", "claimed by 2+ settlements at tier 2, awarded to none (§4.6)"),
+    ("bank_charge", "bank charge", "§3.6: bank charges stay noise, not cases"),
+    ("self_matched_reversal", "self-matched reversal", "a credit and its own reversal netting to a wash (REV-18)"),
+    ("outbound_noise", "outbound noise", "an ordinary debit to an unrelated party"),
+    ("unaccounted", "unaccounted", "reachable by no rule — must always be zero"),
+)
+"""Row order and prose for §6's table, beside the template that renders it.
+
+Keyed by `BankLineDisposition`'s own values rather than re-listing the enum, so
+a disposition added there and forgotten here shows up as a `KeyError` at render
+time instead of silently vanishing from the report — which is the whole failure
+mode this section exists to prevent."""
+
+
 def render_report_html(context: ReportContext) -> str:
     """The one self-contained FR-11 HTML file for `context`.
 
@@ -796,6 +856,7 @@ def render_report_html(context: ReportContext) -> str:
         external_action_count=external_action_count,
         no_action_count=no_action_count,
         auto_resolved_count=auto_resolved_count,
+        bank_disposition_rows=BANK_DISPOSITION_ROWS,
         total_cases=total_cases,
         external_action_share=(external_action_count / total_cases) if total_cases else 0.0,
         no_action_share=(no_action_count / total_cases) if total_cases else 0.0,

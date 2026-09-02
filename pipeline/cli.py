@@ -210,6 +210,7 @@ def run_reconciliation(
         result.outcome.outcomes,
         ground_truth,
         arm=classifier_arm.arm_name,
+        bank_line_accounting=result.bank_accounting,
         seed=seed,
         provenance=provenance,
     )

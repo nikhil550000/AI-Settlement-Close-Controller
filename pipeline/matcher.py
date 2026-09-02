@@ -279,10 +279,16 @@ def match_cases(
             settlement = case.settlement
             assert settlement is not None  # tier 2 is settlement-anchored by construction
             in_window = is_within_settlement_window(_settlement_created_date(settlement), snapshot_date)
+            # The demoted claim is dropped from `bank_lines` — the case is not
+            # matched to this credit — but kept on `contested_bank_lines`, so the
+            # money stays visible to the report and to `pipeline.bank_accounting`
+            # instead of falling out of the batch. See `Case.contested_bank_lines`.
+            lost = tuple(line for line in case.bank_lines if line.line_id in contested)
             resolved.append(
                 case.model_copy(
                     update={
                         "bank_lines": (),
+                        "contested_bank_lines": case.contested_bank_lines + lost,
                         "match_tier": int(MatchTier.NO_MATCH),
                         "residual_paise": _apply_timing_rule(int(settlement.amount), in_window=in_window),
                         "in_settlement_window": in_window,

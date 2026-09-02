@@ -25,8 +25,9 @@ flowchart TB
 
     TERM["<b>terminal state</b> · §1.3 — exactly one per case<br/>AUTO_MATCHED · AUTO_CLOSED · ABSTAINED<br/>EXTERNAL_ACTION_REQUIRED · REVIEW_REQUIRED"]
     GT["<b>ground_truth.jsonl</b><br/><i>evaluation-only — never fed to the pipeline</i>"]
-    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts → one HTML file"]
+    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts + bank-line<br/>accounting → one HTML file"]
     SEM["<b>S · Semantics</b><br/>six free-text reads — five routing,<br/>one on the money path<br/><i>KeywordSemantics ⇄ LlmSemantics</i>"]
+    ACCT["<b>bank-line accounting</b><br/>every bank line in exactly one disposition<br/><i>denominated in source records, not cases —<br/>the unaccounted bucket must always be empty</i>"]
 
     G -.->|"disk is the only channel<br/>§4.1 import guard"| SRC
     SRC --> C1
@@ -40,6 +41,9 @@ flowchart TB
     C8 --> TERM
     TERM --> C9
     GT --> C9
+    C8 --> ACCT
+    SRC -.->|"the raw statement"| ACCT
+    ACCT --> C9
 
     SEM -.-> C2
     SEM -.-> C3
@@ -52,7 +56,7 @@ flowchart TB
     classDef data fill:#f4f5f7,stroke:#9aa3b0,stroke-width:1px,color:#1b1f24
     classDef state fill:#eaf7f0,stroke:#1e8e5a,stroke-width:2px,color:#1b1f24
 
-    class C1,C2,C3,C4,C6,C7,C8,C9 det
+    class C1,C2,C3,C4,C6,C7,C8,C9,ACCT det
     class SEM,C5 model
     class G,SRC,GT data
     class TERM state
@@ -74,6 +78,7 @@ flowchart TB
 | 7 | Validator | The invariant 1.7.5 chain plus both §3.4 validation layers | `pipeline/validator.py` |
 | 8 | Apply and re-reconcile | Ledger write under 1.7.4's idempotency constraint, residual recheck, terminal state | `pipeline/apply.py`, `pipeline/reconciliation.py` |
 | 9 | Reporter | Metric surface, §5.2 matrices, five §1.8 artifacts, single-file HTML | `pipeline/metrics.py`, `pipeline/eval_report.py`, `pipeline/report.py` |
+| A | Bank-line accounting | Every bank line in exactly one disposition — the one figure denominated in source records rather than cases | `pipeline/bank_accounting.py` |
 
 **Component S is not a pipeline stage.** It is a dependency components 2, 3, 4, 5 and 8 all take, threaded as a `semantics=` parameter from `run_batch` down. It exists because those components were each answering a question about English with a literal-substring test, and holding the six together is what made them measurable as a set — see the ablations below.
 

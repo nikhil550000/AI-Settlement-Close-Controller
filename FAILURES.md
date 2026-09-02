@@ -121,6 +121,26 @@ Failing loudly is the correct behaviour and is to `align_ground_truth`'s credit.
 
 ---
 
+## 8. Rs 12,693.20 of bank credit went missing, and no test could see it
+
+**What broke.** `data/contested/` shipped with four bank credits — **Rs 12,693.20** — attached to nothing. Not mis-attached: absent. They appeared in no case, no metric and no line of the FR-11 report.
+
+**Why every individual decision was correct.** The credits narrate the gateway, so `assemble_orphan_cases` correctly declined to treat them as orphans — a credit from Razorpay is presumptively spoken for by a settlement. FR-09 tier-2 demotion then correctly dropped them from every settlement that had claimed them, because §4.6 says a tie is not a match. Each rule did exactly what it should. The money fell into the gap between two correct decisions.
+
+**Why the suite was blind to it.** Every metric in §1.6 is denominated in **cases**. A bank line that reaches no case is invisible to all of them, in both directions: it cannot lower a rate, and it cannot raise one. 602 tests, six seeds, four committed batches, and not one assertion was denominated in the unit the loss occurred in. It was found by *reading* — an adversarial pass over the finished contested-credit work — and written into the README as a known limitation, which is where it sat.
+
+**Why it is the most dangerous class of defect here.** A wrong journal entry is loud: `false_match_rate` moves, `auto_close_precision` moves, a confusion matrix goes off-diagonal. Money that silently leaves the denominator moves nothing at all. In a finance product that is the failure mode that survives to production, because every dashboard still reads green.
+
+**The fix is a unit, not a rule.** `pipeline/bank_accounting.py` partitions every bank line into exactly one disposition — settlement evidence, orphan evidence, contested-unawarded, bank charge, self-matched reversal, outbound noise — with `unaccounted` as a seventh bucket that must always be empty. The contested credits now land in a named bucket with their rupee value, and `Case.contested_bank_lines` carries the line back onto each settlement that claimed and lost it: visible to the report, invisible to everything that prices a case, so no downstream reader gains evidence the matcher just ruled inadmissible.
+
+It changes no §1.6 metric. `data/metrics.json` gained one field and not a single existing figure moved.
+
+**The guard.** `tests/test_bank_accounting.py::test_the_partition_is_total_on_every_committed_batch` asserts, over all four committed batches, that the disposition counts sum to the bank-line count and `unaccounted` is empty. A future change that makes a line reachable by no rule turns that red instead of quietly removing money from the batch. `test_noise_dispositions_are_read_from_case_assemblys_own_rules` pins that each noise bucket actually fires, so a partition that classified everything as one disposition cannot pass.
+
+**What it also bought.** The contested ablation now has a second denominator. The grounded model read returns **Rs 7,323.00** of bank credit to a settlement that the keyword arm leaves unattached, and the credits it still cannot place are a strict subset of the keyword arm's. Two cases was a thin number; the same result in money is not.
+
+---
+
 ## The rest
 
 | What broke | How it was found | Fix and guard |

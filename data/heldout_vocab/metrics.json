@@ -25,6 +25,28 @@
     "numerator": 30,
     "value": 1.0
   },
+  "bank_line_accounting": {
+    "contested_unawarded_line_ids": [],
+    "counts": {
+      "bank_charge": 20,
+      "contested_unawarded": 0,
+      "orphan_evidence": 28,
+      "outbound_noise": 18,
+      "self_matched_reversal": 12,
+      "settlement_evidence": 98,
+      "unaccounted": 0
+    },
+    "credit_paise": {
+      "bank_charge": 0,
+      "contested_unawarded": 0,
+      "orphan_evidence": 3763469,
+      "outbound_noise": 0,
+      "self_matched_reversal": 672403,
+      "settlement_evidence": 206891510,
+      "unaccounted": 0
+    },
+    "unaccounted_line_ids": []
+  },
   "classification_counts": {
     "AMBIGUOUS_CASE": 34,
     "BANK_CREDIT_OVERDUE": 5,

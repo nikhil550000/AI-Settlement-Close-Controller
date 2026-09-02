@@ -48,6 +48,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.apply import CaseOutcome
+from pipeline.bank_accounting import BankLineAccounting
 from pipeline.case_assembly import Case
 from pipeline.ground_truth import ExceptionClass, GroundTruthCase, OutcomeState
 from pipeline.metrics import (
@@ -622,6 +623,7 @@ def build_eval_report(
     arm: str,
     seed: int | None = None,
     provenance: RunProvenance | None = None,
+    bank_line_accounting: BankLineAccounting | None = None,
 ) -> EvalReport:
     """The §1.6 surface plus §5.2's matrices and §5.5's review, for one run.
 
@@ -636,7 +638,9 @@ def build_eval_report(
     """
     by_outcome = {outcome.case_id: outcome for outcome in outcomes}
     by_truth = align_ground_truth(cases, ground_truth)
-    metrics = compute_metrics(cases, outcomes, ground_truth, provenance=provenance)
+    metrics = compute_metrics(
+        cases, outcomes, ground_truth, provenance=provenance, bank_line_accounting=bank_line_accounting
+    )
     return EvalReport(
         seed=seed,
         arm=arm,
