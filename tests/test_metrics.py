@@ -180,8 +180,8 @@ def test_every_denominator_hand_checks_against_the_batch_totals_table() -> None:
         assert metric.precision.denominator == report.classification_counts[str(metric.subtype)]
 
     # REV-25: the macro is over seven subtypes, not six.
-    assert report.exception_subtype_precision_macro.denominator == 7
-    assert report.exception_subtype_recall_macro.denominator == 7
+    assert report.exception_subtype_precision_macro.subtypes_eligible == 7
+    assert report.exception_subtype_recall_macro.subtypes_eligible == 7
 
     # `value_coverage`'s denominator is every case's value, in integer paise —
     # checked against the cases themselves in
@@ -470,7 +470,7 @@ def test_a_misclassified_subtype_moves_one_precision_and_one_recall() -> None:
             assert moved[subtype] == before[subtype]
     assert report.exception_subtype_recall_macro.value is not None
     assert report.exception_subtype_recall_macro.value < 1.0
-    assert report.exception_subtype_recall_macro.denominator == 7
+    assert report.exception_subtype_recall_macro.subtypes_eligible == 7
 
 
 def test_an_unclassified_subtype_costs_recall_without_costing_any_precision() -> None:
@@ -518,10 +518,10 @@ def test_a_subtype_the_system_never_assigns_leaves_the_macro_over_fewer_subtypes
     assert duplicate.recall.numerator == 0
     assert duplicate.recall.denominator == 3
     assert duplicate.recall.value == 0.0
-    assert report.exception_subtype_precision_macro.numerator == 6
-    assert report.exception_subtype_precision_macro.denominator == 7
+    assert report.exception_subtype_precision_macro.subtypes_averaged == 6
+    assert report.exception_subtype_precision_macro.subtypes_eligible == 7
     assert report.exception_subtype_precision_macro.value == 1.0
-    assert report.exception_subtype_recall_macro.numerator == 7
+    assert report.exception_subtype_recall_macro.subtypes_averaged == 7
     assert report.exception_subtype_recall_macro.value == pytest.approx(6 / 7)
 
 
@@ -626,8 +626,8 @@ def test_macro_average_denominator_is_seven_and_numerator_is_the_defined_subtype
         (report.exception_subtype_recall_macro, [m.recall for m in report.subtype_metrics]),
     ):
         defined = [r.value for r in per_subtype if r.value is not None]
-        assert macro.denominator == 7
-        assert macro.numerator == len(defined)
+        assert macro.subtypes_eligible == 7
+        assert macro.subtypes_averaged == len(defined)
         assert macro.value == pytest.approx(sum(defined) / len(defined))
 
 

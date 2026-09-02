@@ -31,7 +31,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 
-from pipeline.apply import BatchOutcome, apply_batch, seed_ledger
+from pipeline.apply import BatchOutcome, CaseOutcome, apply_batch, seed_ledger
 from pipeline.case_assembly import Case, assemble_cases
 from pipeline.classifier import ClassificationResult, EvidenceBundle, build_evidence_bundles
 from pipeline.instantiator import CandidateJournalEntry, instantiate_cases
@@ -52,6 +52,42 @@ Stated in code, beside the run that can exhibit it, so the shortfall shows
 up as a named limitation rather than as an unexplained dent in
 `exception_subtype_recall`.
 """
+
+
+def _carry_forward_validations(first: BatchOutcome, second: BatchOutcome) -> BatchOutcome:
+    """Keep the §1.8 audit trail from the pass that actually posted.
+
+    `run_batch` applies twice when a classifier is given, and invariant 1.7.4
+    makes the second pass *replay* rather than repost. That is correct
+    behaviour, but it costs the report its evidence: `apply_case`'s replay
+    short-circuit emits a `ValidationReport` carrying the single check
+    `NOT_PREVIOUSLY_POSTED` and never runs `validate_candidate` again, so
+    every `AUTO_CLOSED` case in the rendered artifact read
+
+        PASS not_previously_posted: already posted identically by a previous
+        run; replayed, not re-posted
+
+    and showed none of `entry_balanced`, `post_adjustment_residual_zero`,
+    `account_direction_permitted`, `template_allowlisted` or
+    `cited_records_exist`. There was no previous run — it was this same
+    command's internal second pass — so the artifact §1.8 requires to show
+    "the specific safety validations passed" was showing one check, and the
+    one least able to support the claim.
+
+    The checks that actually gated the posting are the first pass's. This
+    substitutes them back wherever the second pass produced nothing but the
+    replay marker, leaving every other field of the second pass's outcome
+    (state, classified subtype, exception class) untouched — those are the
+    fields the second pass exists to compute.
+    """
+    first_by_case = {outcome.case_id: outcome.validations for outcome in first.outcomes}
+    merged: list[CaseOutcome] = []
+    for outcome in second.outcomes:
+        original = first_by_case.get(outcome.case_id, ())
+        if outcome.replayed_entries and original:
+            outcome = outcome.model_copy(update={"validations": original})
+        merged.append(outcome)
+    return second.model_copy(update={"outcomes": tuple(merged)})
 
 
 class RunResult(BaseModel):
@@ -127,7 +163,7 @@ def run_batch(
         bundles = build_evidence_bundles(cases, evidences, outcome.outcomes)
         classifications = tuple(classifier(bundles))
         by_case_id = {result.case_id: result.subtype for result in classifications}
-        outcome = apply_batch(
+        second_pass = apply_batch(
             conn,
             cases,
             evidences,
@@ -135,6 +171,7 @@ def run_batch(
             posting_date=snapshot_date,
             classifications=by_case_id,
         )
+        outcome = _carry_forward_validations(outcome, second_pass)
 
     return RunResult(
         cases=tuple(cases),

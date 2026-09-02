@@ -158,6 +158,34 @@ class Rate(BaseModel):
         return self.value is not None
 
 
+class MacroRate(BaseModel):
+    """An unweighted mean over per-subtype rates (§5.2's macro average).
+
+    Deliberately **not** a `Rate`. A mean of ratios is not itself a ratio of
+    two integers, and expressing it as one produced a committed artifact that
+    contradicted itself on its face — `{"numerator": 7, "denominator": 7,
+    "value": 0.80}`, where 7/7 is 1.00. `Rate`'s own docstring makes the two
+    integers "the auditable part" and derives the float from them; a macro
+    that borrowed the shape while breaking that derivation defeated the one
+    discipline this module exists to enforce.
+
+    So the two counts travel under names that say what they actually are:
+    how many subtypes entered the mean, and how many were eligible to. A
+    macro computed over five of seven subtypes still says so on its face —
+    §5.2's reason for wanting them visible — without claiming to be a ratio.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    value: float | None
+    subtypes_averaged: int
+    subtypes_eligible: int
+
+    @property
+    def is_defined(self) -> bool:
+        return self.value is not None
+
+
 def rate(numerator: int, denominator: int) -> Rate:
     """A `Rate` from two integers, with the undefined case handled once, here."""
     if denominator < 0 or numerator < 0:
@@ -169,7 +197,7 @@ def rate(numerator: int, denominator: int) -> Rate:
     )
 
 
-def _macro_average(rates: Sequence[Rate]) -> Rate:
+def _macro_average(rates: Sequence[Rate]) -> MacroRate:
     """The unweighted mean over the rates that are defined.
 
     Reported as a `Rate` whose `numerator` is how many subtypes entered the
@@ -179,10 +207,10 @@ def _macro_average(rates: Sequence[Rate]) -> Rate:
     a macro that silently drops a subtype would defeat that.
     """
     defined = [r.value for r in rates if r.value is not None]
-    return Rate(
-        numerator=len(defined),
-        denominator=len(rates),
+    return MacroRate(
         value=(sum(defined) / len(defined)) if defined else None,
+        subtypes_averaged=len(defined),
+        subtypes_eligible=len(rates),
     )
 
 
@@ -377,9 +405,9 @@ class MetricsReport(BaseModel):
     subtype_metrics: tuple[SubtypeMetrics, ...]
     """Per-subtype precision and recall with denominators visible (§5.2), over
     `GRADED_SUBTYPES` in §3.3's order."""
-    exception_subtype_precision_macro: Rate
+    exception_subtype_precision_macro: MacroRate
     """Unweighted mean of the seven per-subtype precisions (§5.2, REV-25)."""
-    exception_subtype_recall_macro: Rate
+    exception_subtype_recall_macro: MacroRate
     """Unweighted mean of the seven per-subtype recalls (§5.2, REV-25). The §5.4
     ablation reports its delta on this figure."""
 

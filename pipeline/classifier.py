@@ -107,6 +107,8 @@ __all__ = [
     "parse_slot_a_response",
     "classify_case_llm",
     "classify_batch_llm",
+    "classify_case_hybrid",
+    "classify_batch_hybrid",
 ]
 
 _NON_AUTO_CLOSE_STATES = frozenset(
@@ -419,6 +421,7 @@ def classify_case_llm(
     *,
     mode: CacheMode,
     client: LLMClient | None = None,
+    on_cache_miss: str = "raise",
 ) -> ClassificationResult:
     """One case through Slot A: cache lookup, then (only under `CacheMode.REFRESH`) a
     real Fireworks call on a miss. `CacheMode.STRICT` never constructs a network path —
@@ -429,9 +432,11 @@ def classify_case_llm(
     raw = cache.get(prompt)
     if raw is None:
         if mode is CacheMode.STRICT:
+            if on_cache_miss == "fallback":
+                return classify_case_baseline(bundle)
             raise CacheMissError(
                 f"no cached Slot A response for case {bundle.case_id!r}; "
-                "run with --llm-cache=refresh to populate it"
+                "run with --cache-mode refresh to populate it"
             )
         if client is None:
             raise ValueError("CacheMode.REFRESH on a cache miss requires a client")
@@ -450,7 +455,100 @@ def classify_batch_llm(
     *,
     mode: CacheMode,
     client: LLMClient | None = None,
+    on_cache_miss: str = "raise",
 ) -> list[ClassificationResult]:
     """Slot A over a whole batch. See `classify_case_llm` — the same cache/mode/client
     contract applies per case."""
-    return [classify_case_llm(bundle, cache, mode=mode, client=client) for bundle in bundles]
+    return [
+        classify_case_llm(bundle, cache, mode=mode, client=client, on_cache_miss=on_cache_miss)
+        for bundle in bundles
+    ]
+
+
+# --- The hybrid arm (§5.4's third comparator, added after the Phase 7 measurement). ---
+
+
+def classify_case_hybrid(
+    bundle: EvidenceBundle,
+    cache: PromptCache,
+    *,
+    mode: CacheMode,
+    client: LLMClient | None = None,
+    on_cache_miss: str = "raise",
+) -> ClassificationResult:
+    """Slot A scoped to the one split §4.2 actually reserves for it.
+
+    `classify_case_llm` puts all eight `SubtypeLabel` values in front of the
+    model for every non-auto-close case. Measured against the reference batch
+    that is strictly worse than doing nothing: six of the seven graded subtypes
+    have a deterministic §3.3 trigger, and `EvidenceBundle` — correctly, per
+    invariant 1.7.2 — carries no UTR, no amount and no dispute flag, so the
+    model cannot *check* six of the eight definitions it is asked to choose
+    between. It pattern-matches narration text instead, and the cost lands as
+    false positives on cases whose ground truth is `ABSTAINED`: confident
+    operational exceptions manufactured out of genuine ambiguity, which is the
+    worst error direction §1.3 names.
+
+    This arm keeps the same three branches as `classify_case_baseline` and
+    swaps only the middle one:
+
+    1. **A trigger fired** — adopt it. Component 4 already answered; a model
+       that disagrees can only be wrong, since the trigger *is* the §3.3
+       definition evaluated on evidence the bundle does not carry.
+    2. **An untriggered orphan case with exactly one narration** — the
+       `UNMATCHED_INBOUND_CREDIT` / `AMBIGUOUS_CASE` read, and the only
+       judgment §4.2 assigns Slot A ("turns entirely on whether the free-text
+       narration identifies a counterparty"). Slot A answers, and its answer is
+       collapsed to that binary: anything other than
+       `UNMATCHED_INBOUND_CREDIT` reads as "no counterparty identified", which
+       is `AMBIGUOUS_CASE`. The collapse is what keeps a label the model cannot
+       verify from reaching the report.
+    3. **Everything else** — `AMBIGUOUS_CASE`, unchanged.
+
+    The model is therefore consulted on 16 of 70 cases at seed 0 rather than
+    all 70, and `ClassificationResult.source` still names which of the three
+    branches produced each label, so the audit trail (§1.7.3) distinguishes an
+    adopted trigger from a model read without inspecting the arm.
+    """
+    if bundle.fired_subtypes:
+        return ClassificationResult(
+            case_id=bundle.case_id,
+            subtype=SubtypeLabel(bundle.fired_subtypes[0].value),
+            source=ClassificationSource.DETERMINISTIC_TRIGGER,
+        )
+
+    if bundle.case_kind is CaseKind.ORPHAN and len(bundle.narrations) == 1:
+        slot_a = classify_case_llm(bundle, cache, mode=mode, client=client, on_cache_miss=on_cache_miss)
+        subtype = (
+            SubtypeLabel.UNMATCHED_INBOUND_CREDIT
+            if slot_a.subtype is SubtypeLabel.UNMATCHED_INBOUND_CREDIT
+            else SubtypeLabel.AMBIGUOUS_CASE
+        )
+        return ClassificationResult(
+            case_id=bundle.case_id,
+            subtype=subtype,
+            source=ClassificationSource.LLM_SLOT_A,
+        )
+
+    return ClassificationResult(
+        case_id=bundle.case_id,
+        subtype=SubtypeLabel.AMBIGUOUS_CASE,
+        source=ClassificationSource.KEYWORD_BASELINE,
+    )
+
+
+def classify_batch_hybrid(
+    bundles: Sequence[EvidenceBundle],
+    cache: PromptCache,
+    *,
+    mode: CacheMode,
+    client: LLMClient | None = None,
+    on_cache_miss: str = "raise",
+) -> list[ClassificationResult]:
+    """The hybrid arm over a whole batch. Same cache/mode/client contract as
+    `classify_batch_llm`; it simply asks for fewer of the same cached prompts,
+    so a cache populated for the Slot A arm serves this one with no refresh."""
+    return [
+        classify_case_hybrid(bundle, cache, mode=mode, client=client, on_cache_miss=on_cache_miss)
+        for bundle in bundles
+    ]

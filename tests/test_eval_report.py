@@ -70,7 +70,7 @@ from pipeline.exception_class import (
 )
 from pipeline.ground_truth import ExceptionClass, ExceptionSubtype, OutcomeState
 from pipeline.llm_cache import CacheMode, PromptCache
-from pipeline.metrics import MetricsError, Rate, align_ground_truth, rate
+from pipeline.metrics import MacroRate, MetricsError, Rate, align_ground_truth, rate
 from pipeline.run import run_batch
 from pipeline.storage import connect
 from pipeline.subtype_label import SubtypeLabel
@@ -682,7 +682,14 @@ def test_no_renderer_prints_a_rate_without_its_denominator() -> None:
 
     review = render_threshold_review(report.threshold_review)
     for check in report.threshold_review:
-        assert f"({check.measured.numerator}/{check.measured.denominator})" in review
+        measured = check.measured
+        if isinstance(measured, MacroRate):
+            # A macro is a mean of ratios, not a ratio (see `MacroRate`); it carries
+            # its coverage instead of a denominator, and §5.2's rule is satisfied by
+            # the per-subtype table above, where the seven real denominators live.
+            assert f"({measured.subtypes_averaged} of {measured.subtypes_eligible} subtypes)" in review
+        else:
+            assert f"({measured.numerator}/{measured.denominator})" in review
 
 
 def test_confusion_matrix_renders_every_label_and_its_confusions() -> None:

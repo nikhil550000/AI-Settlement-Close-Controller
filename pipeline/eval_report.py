@@ -51,6 +51,7 @@ from pipeline.apply import CaseOutcome
 from pipeline.case_assembly import Case
 from pipeline.ground_truth import ExceptionClass, GroundTruthCase, OutcomeState
 from pipeline.metrics import (
+    MacroRate,
     GRADED_SUBTYPES,
     MetricsError,
     MetricsReport,
@@ -384,14 +385,14 @@ class ThresholdCheck(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     target: ThresholdTarget
-    measured: Rate
+    measured: Rate | MacroRate
     verdict: ThresholdVerdict
     detail: str = ""
     """Why the verdict is what it is, where the comparison is not just a number
     against a bound (the `GROUND_TRUTH_COUNT` row, and any undefined metric)."""
 
 
-def named_rates(report: MetricsReport) -> dict[str, Rate]:
+def named_rates(report: MetricsReport) -> dict[str, Rate | MacroRate]:
     """Every §1.6 rate on a `MetricsReport`, keyed by its §1.6 name.
 
     One mapping, used by both the threshold review and the
@@ -491,8 +492,8 @@ class MetricGap(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     metric: str
-    development: Rate
-    held_out: Rate
+    development: Rate | MacroRate
+    held_out: Rate | MacroRate
     gap: float | None
 
     @property
@@ -649,9 +650,16 @@ def build_eval_report(
 # --- Plain-text rendering. ---
 
 
-def _ratio(value: Rate) -> str:
-    """A rate as `value (n/d)`, or `undefined (0/0)` — never a bare float (§5.2)."""
+def _ratio(value: Rate | MacroRate) -> str:
+    """A rate as `value (n/d)`, or `undefined (0/0)` — never a bare float (§5.2).
+
+    A `MacroRate` renders its two counts as `n of d subtypes` instead, because
+    they are a coverage statement about the mean, not the fraction that
+    produced it — see that model's own docstring.
+    """
     shown = "undefined" if value.value is None else f"{value.value:.4f}"
+    if isinstance(value, MacroRate):
+        return f"{shown} ({value.subtypes_averaged} of {value.subtypes_eligible} subtypes)"
     return f"{shown} ({value.numerator}/{value.denominator})"
 
 

@@ -32,7 +32,7 @@ Two facts the spec requires stated everywhere the numbers below are shown — he
 
 > **Synthetic evaluation.** Ground-truth labels and the records being graded come from one generator. The evaluation measures whether the pipeline recovers the injected intent; it does not establish that the injected intent resembles a real merchant's books.
 
-> **Anomaly enrichment.** `match_rate` on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility — only 30 of 150 cases (20%) require no action at all, against a real-world break rate closer to low single digits, roughly an order of magnitude enrichment. `EXTERNAL_ACTION_REQUIRED` runs high because orphan cases are unresolvable by construction (§3.6) and are the majority of that state's population: 36 of 150 cases (24.0%) are **ground-truth** `EXTERNAL_ACTION_REQUIRED`; the system's own predicted count on this run varies slightly by classifier arm (36/150 baseline, 43/150 Slot A — Slot A recovers seven more `UNMATCHED_INBOUND_CREDIT` cases the baseline's fixed keyword list misses, at the recall/precision cost the §5.4 ablation figure below quantifies).
+> **Anomaly enrichment.** `match_rate` on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility — only 30 of 150 cases (20%) require no action at all, against a real-world break rate closer to low single digits, roughly an order of magnitude enrichment. `EXTERNAL_ACTION_REQUIRED` runs high because orphan cases are unresolvable by construction (§3.6) and are the majority of that state's population: 36 of 150 cases (24.0%) are **ground-truth** `EXTERNAL_ACTION_REQUIRED`; the system's own predicted count varies by classifier arm (36/150 deterministic, 43/150 Slot A). The seven extra cases on the Slot A arm are **not** recoveries: both arms have `UNMATCHED_INBOUND_CREDIT` recall of exactly 8/8, so Slot A finds no true positive the deterministic arm misses. The seven are ground-truth `ABSTAINED` cases Slot A wrongly promotes to a confident exception — the same seven the eval report prints as `7 × ground truth ABSTAINED → predicted EXTERNAL_ACTION_REQUIRED`. See the arm comparison below.
 
 ## Quickstart / reproduce path
 
@@ -41,7 +41,7 @@ uv sync
 uv run reconcile
 ```
 
-That single command (FR-10) reads the committed reference batch at `data/reference/` (seed 0, snapshot date 2026-08-28), runs the full pipeline — matching, evidence, template instantiation, validation, ledger apply, Slot A classification, Slot B narration, metrics — and writes both a console summary and `.run/report.html` / `.run/metrics.json`. Defaults: `--classifier llm` (Slot A), `--llm-cache strict` (no network call is ever made; `--llm-cache refresh` is the only mode that calls Fireworks, and needs `FIREWORKS_API_KEY`).
+That single command (FR-10) reads the committed reference batch at `data/reference/` (seed 0, snapshot date 2026-08-28), runs the full pipeline — matching, evidence, template instantiation, validation, ledger apply, Slot A classification, Slot B narration, metrics — and writes both a console summary and `.run/report.html` / `.run/metrics.json`. Defaults: `--classifier baseline` (the arm that measures best — see the arm comparison below), `--cache-mode strict` (no network call is ever made; `--cache-mode refresh` is the only mode that calls Fireworks, and needs `FIREWORKS_API_KEY`). `--classifier hybrid` and `--classifier llm` select the other two arms; all three run offline against the committed cache.
 
 To reproduce the **exact pinned run** (FR-13) in place, overwriting nothing but the two files already committed at `data/`:
 
@@ -77,7 +77,7 @@ A third, disjoint held-out batch (seed 2) is generated and run for §5.1's devel
 
 The full §1.6 metric surface is computed against ground truth in `pipeline/metrics.py`; every rate carries its own integer numerator and denominator (never a bare float), and an undefined metric (zero denominator) reports as `undefined`, never as `0.0` — collapsing the two would flatter the system. Two §5.2 confusion matrices (outcome state, exception class), a per-subtype precision/recall breakdown over Slot A's seven graded subtypes, and the §5.5 provisional threshold review are in `pipeline/eval_report.py`; all five §1.8 report artifacts render into one self-contained HTML file (`pipeline/report.py`, FR-11).
 
-**Measured at seed 0, Slot A arm, first real run, nothing tuned in response to it:**
+**Measured at seed 0, the shipped `baseline` arm, nothing tuned in response to it.** (The same table on the `llm` arm is in the arm comparison below; it is worse on every line that differs.)
 
 | Metric | Value | §5.5 target |
 |---|---|---|
@@ -86,18 +86,32 @@ The full §1.6 metric surface is computed against ground truth in `pipeline/metr
 | `auto_match_precision` | 30/30 = 1.0000 | ≥ 0.95 |
 | `auto_close_recall` | 50/50 = 1.0000 | 0.80 – 0.95 |
 | `auto_match_recall` | 30/30 = 1.0000 | 0.85 – 0.95 |
-| `state_prediction_accuracy` | 143/150 = 0.9533 | 0.80 – 0.90 |
-| `exception_subtype_recall` (macro, 7 subtypes) | 0.8405 | 0.70 – 0.85 |
-| `exception_subtype_precision` (macro, 7 subtypes) | 0.8012 | 0.75 – 0.90 |
-| `abstention_rate` | 10/150 = 0.0667 | 8 – 18% |
+| `state_prediction_accuracy` | 150/150 = 1.0000 | 0.80 – 0.90 |
+| `exception_subtype_recall` (macro, 7 subtypes) | 1.0000 | 0.70 – 0.85 |
+| `exception_subtype_precision` (macro, 7 subtypes) | 1.0000 | 0.75 – 0.90 |
+| `abstention_rate` | 17/150 = 0.1133 | 8 – 18% |
 | `declined_by_policy_rate` | 17/150 = 0.1133 | ≈ 11.3% |
 | `value_coverage` | 0.6246 | reported, no target |
+
+**Read the perfect scores as a statement about the batch, not the system.** Every 1.0000 above is real and reproducible, and none of it is evidence the Controller is good — see the saturation note under the ablation below. The two numbers worth reading as results are `false_match_rate` (0, on a batch built to tempt false matches) and the fact that **80 of 150 cases close fully automatically — 30 `AUTO_MATCHED` + 50 `AUTO_CLOSED` — which is 100% of the population ground truth marks automatable, with zero false matches.** `match_rate` (30/150 = 0.20) counts only the no-adjustment half of that and is the §1.6 name for it, so it is reported under that name and not as a headline.
 
 `false_match_rate` and `auto_close_precision` are the two primary safety metrics — both read exactly where §5.5 asks (0, and 1.00). `abstention_rate` reads below the 8–18% operating range on the Slot A arm (session 6.2's finding, reported rather than tuned — see the `MEASURED, NOT TUNED` note below). `auto_close_recall`/`auto_match_recall` reading ABOVE their bands means every ground-truth `AUTO_MATCHED`/`AUTO_CLOSED` case was actually caught, which is a stronger result than the band anticipated, not a defect.
 
 **Development-versus-held-out gap (§5.1, seed 1 vs seed 2), Slot A arm:** the largest gap on a §5.5-targeted metric is `state_prediction_accuracy`, −0.0133 (two cases in 150), and every targeted gap is negative or zero — the held-out batch never scores better than the batch the prompt was written against. `false_match_rate` and `auto_close_precision` stay perfect on both batches; the model's errors are confined entirely to the non-money classification path. On the deterministic baseline, every §5.5-targeted metric has a gap of exactly zero, as §5.1 predicts for a path with no learned parameters. Full figures: `BUILDLOG.md`, session 6.2.
 
-**§5.4 ablation (Slot A vs the deterministic keyword baseline), `exception_subtype_recall` macro:** −0.1095 dev / −0.1143 held-out. Slot A trades roughly eleven points of subtype recall for classifying `UNMATCHED_INBOUND_CREDIT` from narration content, which the baseline's keyword match cannot generalize past its known token list. Computed once, in session 6.2 (`BUILDLOG.md`); cited rather than re-run in session 7.2, since re-running it would measure nothing new.
+**§5.4 ablation — three arms, `exception_subtype` macro, seed 0.** The arm the CLI defaults to is the one that measures best, and on this batch that is the deterministic one:
+
+| arm | macro precision | macro recall | state accuracy | LLM calls |
+|---|---|---|---|---|
+| `baseline` — triggers + keyword read | **1.0000** | **1.0000** | **150/150** | 0 |
+| `hybrid` — triggers win; Slot A decides only the untriggered orphan split | 0.9333 | 1.0000 | 143/150 | 16 |
+| `llm` — Slot A over all eight labels | 0.8012 | 0.8405 | 143/150 | 70 |
+
+Held-out (seed 2) reproduces the ordering: `llm` −0.2044 precision / −0.1143 recall against `baseline`; `hybrid` −0.0612 / ±0.0000.
+
+**Why Slot A loses, stated plainly.** Six of the seven graded subtypes have a deterministic §3.3 trigger, and `EvidenceBundle` — correctly, per invariant 1.7.2 — carries no UTR, no amount and no dispute flag. So the model cannot *check* six of the eight definitions it is asked to choose between; it pattern-matches narration text instead. The cost lands as false positives on cases whose ground truth is `ABSTAINED`: confident operational exceptions manufactured out of genuine ambiguity, which is the error direction §1.3 ranks worst. `hybrid` recovers all of the lost recall and most of the precision by scoping the model to the one split §4.2 actually reserves for it.
+
+**The benchmark is saturated, and that is a finding about the batch, not a result.** The deterministic arm scores 1.0000 on state accuracy and on both macro subtype metrics at seeds 0, 1, 2, 5, 7 and 11, and the hand-authored adversarial set is 10/10. That is not evidence the system is good; it is evidence this generator plants *structurally unambiguous* anomalies — each family produces a distinct arithmetic signature, and REV-16 made the six template predicates mutually exclusive by construction, so evidence → label is a bijection with no irreducible ambiguity for judgment to resolve. A perfect score on a task where perfection is arithmetic proves as little as one cherry-picked match. Closing this is the first entry under Known limitations.
 
 **MEASURED, NOT TUNED.** Every §5.5 threshold in this repository is stated as provisional in the spec itself, "set properly after the first real run against the development batch." No prompt, threshold, predicate, or classifier behaviour has been changed in response to any figure in this README, `BUILDLOG.md`, or the committed reports — §5.1's rule applies with teeth to whoever *acts* on a number, and nobody has.
 
@@ -133,7 +147,8 @@ AI Settlement Close Controller/
 
 ## Known limitations
 
-- **`UNMATCHED_INBOUND_CREDIT` recall trades against the deterministic baseline.** Slot A generalizes past the baseline's fixed keyword list but at a real cost to macro subtype recall — see the §5.4 ablation figure above.
+- **The reference batch does not contain irreducible ambiguity, so it cannot discriminate between arms fairly.** A keyword matcher scores 1.0000 across six seeds; the LLM arm can therefore only lose. Until the generator plants cases whose correct label is genuinely undecidable from structure alone, the ablation measures the batch, not the arms.
+- **Slot A is net-negative on every measured metric and is not the default.** It stays in the repository as the §5.4 comparator and as the honest record of a measured negative result — see the arm comparison above.
 - **No FR-05.** `EXTERNAL_ACTION_REQUIRED` cases carry a categorized exception and a recommended next step (Slot B), but never a proposed recognition entry — §2.4's stated v1 fallback.
 - **Orphan cases are unresolvable by construction (§3.6)** and cannot reach `AUTO_MATCHED` or `AUTO_CLOSED`; they are the majority of `EXTERNAL_ACTION_REQUIRED`'s population, which is why that state runs at roughly a quarter of the batch rather than reading as a defect.
 - **The reconciled-ledger diff artifact shows only `CONTROLLER_ADJUSTMENT` rows**, not the full ~5,800-row ledger — a deliberate reading of FR-11's "diff," not a truncation.

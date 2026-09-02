@@ -44,7 +44,7 @@ from pathlib import Path
 
 import typer
 
-from pipeline.classifier import classify_batch_baseline, classify_batch_llm
+from pipeline.classifier import classify_batch_baseline, classify_batch_hybrid, classify_batch_llm
 from pipeline.eval_report import EvalReport, build_eval_report, render_eval_report
 from pipeline.llm_cache import CacheMode, PromptCache
 from pipeline.llm_client import FIREWORKS_MODEL_ID, FireworksClient
@@ -97,6 +97,7 @@ class ClassifierArm(str, Enum):
 
     BASELINE = "baseline"
     LLM = "llm"
+    HYBRID = "hybrid"
 
     @property
     def arm_name(self) -> str:
@@ -104,7 +105,11 @@ class ClassifierArm(str, Enum):
         `"slot_a"` for `LLM`, matching every existing test and BUILDLOG entry
         (session 6.2 onward). Kept distinct from `.value` (`"llm"`) because
         `--classifier llm` is the CLI's own, more readable flag spelling."""
-        return "baseline" if self is ClassifierArm.BASELINE else "slot_a"
+        return {
+            ClassifierArm.BASELINE: "baseline",
+            ClassifierArm.LLM: "slot_a",
+            ClassifierArm.HYBRID: "hybrid",
+        }[self]
 
 
 def _load_batch(data_dir: Path):
@@ -144,11 +149,16 @@ def run_reconciliation(
     cache = PromptCache(cache_path)
     client = FireworksClient() if cache_mode is CacheMode.REFRESH else None
 
-    classifier = (
-        classify_batch_baseline
-        if classifier_arm is ClassifierArm.BASELINE
-        else (lambda bundles: classify_batch_llm(bundles, cache, mode=cache_mode, client=client))
-    )
+    if classifier_arm is ClassifierArm.BASELINE:
+        classifier = classify_batch_baseline
+    elif classifier_arm is ClassifierArm.HYBRID:
+        classifier = lambda bundles: classify_batch_hybrid(
+            bundles, cache, mode=cache_mode, client=client, on_cache_miss="fallback"
+        )
+    else:
+        classifier = lambda bundles: classify_batch_llm(
+            bundles, cache, mode=cache_mode, client=client, on_cache_miss="fallback"
+        )
 
     result = run_batch(
         conn,
@@ -161,7 +171,9 @@ def run_reconciliation(
     )
 
     narration_bundles = build_narration_bundles(result.cases, result.outcome.outcomes)
-    narrations = narrate_batch_llm(narration_bundles, cache, mode=cache_mode, client=client)
+    narrations = narrate_batch_llm(
+        narration_bundles, cache, mode=cache_mode, client=client, on_cache_miss="fallback"
+    )
 
     provenance = RunProvenance(
         seed=seed,
@@ -211,7 +223,11 @@ def reconcile(
         help="Batch snapshot date, ISO 8601. Must match the date `data_dir` was generated with.",
     ),
     classifier: ClassifierArm = typer.Option(
-        ClassifierArm.LLM.value, help="Slot A arm: 'baseline' (keyword) or 'llm' (Slot A, §4.4)."
+        ClassifierArm.BASELINE.value,
+        help="Classification arm: 'baseline' (deterministic triggers + keyword read), "
+        "'hybrid' (triggers win; Slot A decides only the untriggered orphan split), "
+        "or 'llm' (Slot A over all eight labels, §4.2). Default is whichever arm "
+        "measures best on the reference batch — see README's arm comparison.",
     ),
     cache_path: Path = typer.Option(Path("data/llm_cache.json"), help="§4.3 SHA-keyed prompt/response cache."),
     cache_mode: CacheMode = typer.Option(

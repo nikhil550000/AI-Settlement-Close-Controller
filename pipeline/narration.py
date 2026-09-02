@@ -68,6 +68,7 @@ __all__ = [
     "parse_slot_b_response",
     "narrate_case_llm",
     "narrate_batch_llm",
+    "deterministic_narration",
 ]
 
 class NarrationKind(StrEnum):
@@ -140,7 +141,7 @@ class CaseNarration(BaseModel):
     case_id: str
     kind: NarrationKind
     text: str
-    model_generated: Literal[True] = True
+    model_generated: bool = True
 
 
 def build_narration_bundle(case: Case, outcome: CaseOutcome) -> NarrationBundle | None:
@@ -264,25 +265,74 @@ def parse_slot_b_response(raw: str) -> str:
     return text.strip()
 
 
+def deterministic_narration(bundle: NarrationBundle) -> CaseNarration:
+    """Slot B's disclosed fallback: prose assembled from facts the deterministic
+    path already fixed, carrying `model_generated=False`.
+
+    Slot B had no fallback in v1 because §4.2 names no ablation arm for it, and
+    a `CacheMissError` was the honest strict-mode answer while the only batch
+    anyone ran was the committed seed-0 one. That stopped being true the moment
+    FR-10's CLI shipped: `uv run generate --seed 5` followed by `uv run
+    reconcile --data-dir ...` is a path the README itself invites, and every
+    Slot B prompt on an unseen batch is a guaranteed miss. Ending the product's
+    one command in an unhandled traceback is not a defensible reading of §4.3's
+    "hard error rather than a fallthrough to the API" — that rule exists to keep
+    the *network* out of the eval path, not to make the CLI brittle.
+
+    So the miss degrades to this, labelled, exactly the way Slot A degrades to
+    its keyword baseline: the reader is told which cases carry model prose and
+    which carry assembled text, and no case silently loses its narration.
+    """
+    subtype = bundle.classified_subtype or (bundle.triggered_subtypes[0] if bundle.triggered_subtypes else None)
+    label = str(subtype).replace("_", " ").lower() if subtype is not None else "no classified subtype"
+    if bundle.kind is NarrationKind.RECOMMENDED_ACTION:
+        text = (
+            f"External action required ({label}). Resolution depends on an event outside "
+            "the Controller's authority; route this case to whoever owns that counterparty "
+            "— Razorpay support for settlement-side gaps, the acquiring bank for credit "
+            "delays — citing the linked source records in the audit trail."
+        )
+    else:
+        text = (
+            f"Abstained ({label}). The evidence on this case does not justify an automated "
+            "decision: no §3.4 template predicate fired and the available narration does not "
+            "identify a counterparty. Escalated as-is for human investigation."
+        )
+    return CaseNarration(
+        case_id=bundle.case_id,
+        kind=bundle.kind,
+        text=text,
+        model_generated=False,
+    )
+
+
 def narrate_case_llm(
     bundle: NarrationBundle,
     cache: PromptCache,
     *,
     mode: CacheMode,
     client: LLMClient | None = None,
+    on_cache_miss: str = "raise",
 ) -> CaseNarration:
     """One case through Slot B: cache lookup, then (only under `CacheMode.REFRESH`) a
     real call on a miss. Mirrors `pipeline.classifier.classify_case_llm`'s contract
-    exactly — `CacheMode.STRICT` never constructs a network path; a miss is
-    `CacheMissError`, never a fallthrough to the API (§4.3).
+    exactly — `CacheMode.STRICT` never constructs a network path.
+
+    `on_cache_miss` selects what a strict-mode miss does: `"raise"` (the default,
+    and the contract every §4.3 checkpoint asserts) or `"fallback"`, which returns
+    `deterministic_narration(bundle)` instead. FR-10's CLI passes `"fallback"` so
+    that pointing the product at a batch outside the committed cache degrades to
+    labelled deterministic prose rather than an unhandled traceback.
     """
     prompt = build_slot_b_prompt(bundle)
     raw = cache.get(prompt)
     if raw is None:
         if mode is CacheMode.STRICT:
+            if on_cache_miss == "fallback":
+                return deterministic_narration(bundle)
             raise CacheMissError(
                 f"no cached Slot B response for case {bundle.case_id!r}; "
-                "run with --llm-cache=refresh to populate it"
+                "run with --cache-mode refresh to populate it"
             )
         if client is None:
             raise ValueError("CacheMode.REFRESH on a cache miss requires a client")
@@ -301,7 +351,11 @@ def narrate_batch_llm(
     *,
     mode: CacheMode,
     client: LLMClient | None = None,
+    on_cache_miss: str = "raise",
 ) -> list[CaseNarration]:
     """Slot B over a whole batch. See `narrate_case_llm` — the same cache/mode/client
     contract applies per case."""
-    return [narrate_case_llm(bundle, cache, mode=mode, client=client) for bundle in bundles]
+    return [
+        narrate_case_llm(bundle, cache, mode=mode, client=client, on_cache_miss=on_cache_miss)
+        for bundle in bundles
+    ]

@@ -12,7 +12,9 @@ __pycache__/
 *.sqlite3
 ledger.db
 
-# Run scratch output
+# Run scratch output. `tools/` is the tracked home for anything capability-bearing:
+# FR-12 says nothing capability-bearing may live outside the repository, and the
+# adversarial-set builder and the performance harness both produce committed claims.
 /scratch/
 /.run/
 
