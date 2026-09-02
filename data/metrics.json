@@ -1,8 +1,8 @@
 {
   "abstention_rate": {
     "denominator": 150,
-    "numerator": 10,
-    "value": 0.06666666666666667
+    "numerator": 17,
+    "value": 0.11333333333333333
   },
   "auto_applied_entry_count": 50,
   "auto_close_precision": {
@@ -26,14 +26,14 @@
     "value": 1.0
   },
   "classification_counts": {
-    "AMBIGUOUS_CASE": 8,
+    "AMBIGUOUS_CASE": 34,
     "BANK_CREDIT_OVERDUE": 5,
-    "DISPUTE_PENDING": 4,
-    "DUPLICATE_CREDIT": 1,
+    "DISPUTE_PENDING": 5,
+    "DUPLICATE_CREDIT": 3,
     "REVERSAL_UNMATCHED": 6,
-    "SETTLEMENT_AMOUNT_MISMATCH": 3,
-    "SETTLEMENT_UTR_MISSING": 22,
-    "UNMATCHED_INBOUND_CREDIT": 21
+    "SETTLEMENT_AMOUNT_MISMATCH": 4,
+    "SETTLEMENT_UTR_MISSING": 5,
+    "UNMATCHED_INBOUND_CREDIT": 8
   },
   "declined_by_confidence_rate": {
     "denominator": 150,
@@ -47,18 +47,18 @@
   },
   "deferred_to_human_rate": {
     "denominator": 150,
-    "numerator": 27,
-    "value": 0.18
+    "numerator": 34,
+    "value": 0.22666666666666666
   },
   "exception_subtype_precision_macro": {
-    "denominator": 7,
-    "numerator": 7,
-    "value": 0.8011750154607297
+    "subtypes_averaged": 7,
+    "subtypes_eligible": 7,
+    "value": 1.0
   },
   "exception_subtype_recall_macro": {
-    "denominator": 7,
-    "numerator": 7,
-    "value": 0.8404761904761904
+    "subtypes_averaged": 7,
+    "subtypes_eligible": 7,
+    "value": 1.0
   },
   "false_match_rate": {
     "denominator": 150,
@@ -83,30 +83,30 @@
     "value": 0.4666666666666667
   },
   "predicted_state_counts": {
-    "ABSTAINED": 10,
+    "ABSTAINED": 17,
     "AUTO_CLOSED": 50,
     "AUTO_MATCHED": 30,
-    "EXTERNAL_ACTION_REQUIRED": 43,
+    "EXTERNAL_ACTION_REQUIRED": 36,
     "REVIEW_REQUIRED": 17
   },
   "provenance": {
     "cache_hit_rate": 1.0,
-    "git_sha": "70abab24c49ef673a850653f662dd0c047b98cf2",
+    "git_sha": "2ae71c1de5b5043a61a4511f9058a6f4966b7be8",
     "model_id": "accounts/fireworks/models/gpt-oss-120b",
     "seed": 0,
     "snapshot_date": "2026-08-28"
   },
   "state_prediction_accuracy": {
     "denominator": 150,
-    "numerator": 143,
-    "value": 0.9533333333333334
+    "numerator": 150,
+    "value": 1.0
   },
   "subtype_metrics": [
     {
       "precision": {
-        "denominator": 22,
+        "denominator": 5,
         "numerator": 5,
-        "value": 0.22727272727272727
+        "value": 1.0
       },
       "recall": {
         "denominator": 5,
@@ -130,22 +130,22 @@
     },
     {
       "precision": {
-        "denominator": 3,
-        "numerator": 3,
+        "denominator": 4,
+        "numerator": 4,
         "value": 1.0
       },
       "recall": {
         "denominator": 4,
-        "numerator": 3,
-        "value": 0.75
+        "numerator": 4,
+        "value": 1.0
       },
       "subtype": "SETTLEMENT_AMOUNT_MISMATCH"
     },
     {
       "precision": {
-        "denominator": 21,
+        "denominator": 8,
         "numerator": 8,
-        "value": 0.38095238095238093
+        "value": 1.0
       },
       "recall": {
         "denominator": 8,
@@ -169,27 +169,27 @@
     },
     {
       "precision": {
-        "denominator": 1,
-        "numerator": 1,
+        "denominator": 3,
+        "numerator": 3,
         "value": 1.0
       },
       "recall": {
         "denominator": 3,
-        "numerator": 1,
-        "value": 0.3333333333333333
+        "numerator": 3,
+        "value": 1.0
       },
       "subtype": "DUPLICATE_CREDIT"
     },
     {
       "precision": {
-        "denominator": 4,
-        "numerator": 4,
+        "denominator": 5,
+        "numerator": 5,
         "value": 1.0
       },
       "recall": {
         "denominator": 5,
-        "numerator": 4,
-        "value": 0.8
+        "numerator": 5,
+        "value": 1.0
       },
       "subtype": "DISPUTE_PENDING"
     }
