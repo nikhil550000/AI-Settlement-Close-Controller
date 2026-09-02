@@ -1,0 +1,203 @@
+{
+  "abstention_rate": {
+    "denominator": 12,
+    "numerator": 0,
+    "value": 0.0
+  },
+  "auto_applied_entry_count": 0,
+  "auto_close_precision": {
+    "denominator": 0,
+    "numerator": 0,
+    "value": null
+  },
+  "auto_close_recall": {
+    "denominator": 0,
+    "numerator": 0,
+    "value": null
+  },
+  "auto_match_precision": {
+    "denominator": 6,
+    "numerator": 6,
+    "value": 1.0
+  },
+  "auto_match_recall": {
+    "denominator": 6,
+    "numerator": 6,
+    "value": 1.0
+  },
+  "classification_counts": {
+    "AMBIGUOUS_CASE": 0,
+    "BANK_CREDIT_OVERDUE": 6,
+    "DISPUTE_PENDING": 0,
+    "DUPLICATE_CREDIT": 0,
+    "REVERSAL_UNMATCHED": 0,
+    "SETTLEMENT_AMOUNT_MISMATCH": 0,
+    "SETTLEMENT_UTR_MISSING": 0,
+    "UNMATCHED_INBOUND_CREDIT": 0
+  },
+  "declined_by_confidence_rate": {
+    "denominator": 12,
+    "numerator": 0,
+    "value": 0.0
+  },
+  "declined_by_policy_rate": {
+    "denominator": 12,
+    "numerator": 0,
+    "value": 0.0
+  },
+  "deferred_to_human_rate": {
+    "denominator": 12,
+    "numerator": 0,
+    "value": 0.0
+  },
+  "exception_subtype_precision_macro": {
+    "subtypes_averaged": 1,
+    "subtypes_eligible": 7,
+    "value": 0.3333333333333333
+  },
+  "exception_subtype_recall_macro": {
+    "subtypes_averaged": 1,
+    "subtypes_eligible": 7,
+    "value": 1.0
+  },
+  "false_match_rate": {
+    "denominator": 12,
+    "numerator": 0,
+    "value": 0.0
+  },
+  "ground_truth_state_counts": {
+    "ABSTAINED": 4,
+    "AUTO_CLOSED": 0,
+    "AUTO_MATCHED": 6,
+    "EXTERNAL_ACTION_REQUIRED": 2,
+    "REVIEW_REQUIRED": 0
+  },
+  "match_rate": {
+    "denominator": 12,
+    "numerator": 6,
+    "value": 0.5
+  },
+  "open_case_rate": {
+    "denominator": 12,
+    "numerator": 6,
+    "value": 0.5
+  },
+  "predicted_state_counts": {
+    "ABSTAINED": 0,
+    "AUTO_CLOSED": 0,
+    "AUTO_MATCHED": 6,
+    "EXTERNAL_ACTION_REQUIRED": 6,
+    "REVIEW_REQUIRED": 0
+  },
+  "provenance": {
+    "cache_hit_rate": 1.0,
+    "git_sha": "c4ae4dcac19bcc918eadf2fd4ef933f6ce946583",
+    "model_id": "accounts/fireworks/models/gpt-oss-120b",
+    "seed": 0,
+    "snapshot_date": "2026-08-28"
+  },
+  "state_prediction_accuracy": {
+    "denominator": 12,
+    "numerator": 8,
+    "value": 0.6666666666666666
+  },
+  "subtype_metrics": [
+    {
+      "precision": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "recall": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "subtype": "SETTLEMENT_UTR_MISSING"
+    },
+    {
+      "precision": {
+        "denominator": 6,
+        "numerator": 2,
+        "value": 0.3333333333333333
+      },
+      "recall": {
+        "denominator": 2,
+        "numerator": 2,
+        "value": 1.0
+      },
+      "subtype": "BANK_CREDIT_OVERDUE"
+    },
+    {
+      "precision": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "recall": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "subtype": "SETTLEMENT_AMOUNT_MISMATCH"
+    },
+    {
+      "precision": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "recall": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "subtype": "UNMATCHED_INBOUND_CREDIT"
+    },
+    {
+      "precision": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "recall": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "subtype": "REVERSAL_UNMATCHED"
+    },
+    {
+      "precision": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "recall": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "subtype": "DUPLICATE_CREDIT"
+    },
+    {
+      "precision": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "recall": {
+        "denominator": 0,
+        "numerator": 0,
+        "value": null
+      },
+      "subtype": "DISPUTE_PENDING"
+    }
+  ],
+  "total_cases": 12,
+  "value_coverage": {
+    "denominator": 4784360,
+    "numerator": 2978020,
+    "value": 0.6224489795918368
+  }
+}

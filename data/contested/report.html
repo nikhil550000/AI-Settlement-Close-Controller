@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI Settlement Close Controller — report (baseline, seed 0)</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f8fa; --panel: #ffffff; --ink: #1b1f24; --muted: #5b6472;
+  --border: #e1e4e8; --accent: #2b5fd9;
+  --auto-matched: #1e8e5a; --auto-closed: #2b5fd9; --review: #b8720a;
+  --external: #8b3fc9; --abstained: #6b7280; --bad: #c0392b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0 0 4rem; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+header.report-header { background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 1.5rem 2rem; }
+h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+.run-meta { color: var(--muted); font-size: 0.9rem; }
+.disclosure { background: #fff8e6; border: 1px solid #e8c766; border-radius: 6px;
+  padding: 0.75rem 1rem; margin: 0.75rem 0 0; font-size: 0.9rem; }
+main { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
+section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 1.25rem 1.5rem; margin-top: 1.5rem; }
+section > h2 { margin-top: 0; font-size: 1.1rem; }
+section > p.section-note { color: var(--muted); font-size: 0.88rem; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.87rem; }
+th, td { border-bottom: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left;
+  white-space: nowrap; }
+th { background: #f0f2f5; position: sticky; top: 0; }
+td.wrap, th.wrap { white-space: normal; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem;
+  color: #fff; }
+.badge.AUTO_MATCHED { background: var(--auto-matched); }
+.badge.AUTO_CLOSED { background: var(--auto-closed); }
+.badge.REVIEW_REQUIRED { background: var(--review); }
+.badge.EXTERNAL_ACTION_REQUIRED { background: var(--external); }
+.badge.ABSTAINED { background: var(--abstained); }
+.badge.pass { background: var(--auto-matched); }
+.badge.fail { background: var(--bad); }
+.ai-badge { display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.4rem;
+  border-radius: 4px; background: #eef1ff; color: var(--accent); font-size: 0.72rem;
+  border: 1px solid #c7d0f5; }
+.controls { display: flex; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+.controls input, .controls select { padding: 0.35rem 0.5rem; border: 1px solid var(--border);
+  border-radius: 4px; font-size: 0.87rem; }
+details { margin: 0.15rem 0; }
+details > summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
+details .drill { margin-top: 0.5rem; padding: 0.6rem 0.8rem; background: #f7f8fa;
+  border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+.legs { margin: 0.35rem 0; }
+.legs table { width: auto; }
+.checklist { list-style: none; padding: 0; margin: 0.25rem 0; }
+.checklist li { padding: 0.1rem 0; }
+tr[hidden] { display: none; }
+footer.report-footer { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem;
+  color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<header class="report-header">
+  <h1>AI Settlement Close Controller — batch report</h1>
+  <div class="run-meta">
+    arm: <strong>baseline</strong>
+    &middot; seed: <strong>0</strong>
+    &middot; snapshot date: <strong>2026-08-28</strong>
+    &middot; cases: <strong>12</strong>
+  </div>
+  <div class="disclosure">Ground-truth labels and the records being graded come from one generator. The evaluation measures whether the pipeline recovers the injected intent; it does not establish that the injected intent resembles a real merchant's books.</div>
+  <div class="disclosure">
+    match_rate on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility. The enrichment factor MUST be stated in the README, in the report header of the FR-11 HTML artifact, and in the pitch video, alongside the observation that EXTERNAL_ACTION_REQUIRED runs high (roughly 21%) because orphan cases are unresolvable by construction.
+    This run: 2 of 12 cases
+    (16.7%) are ground-truth
+    <span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span>;
+    6 of 12 (50.0%)
+    require no action at all
+    (<span class="badge AUTO_MATCHED">AUTO_MATCHED</span>).
+  </div>
+</header>
+
+<main>
+
+<section id="metrics">
+  <h2>1. Metrics report</h2>
+  <p class="section-note">Every figure below is a numerator and a denominator (§5.2) — never a bare
+  float. Every §5.5 target is provisional (§5.5).</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>metric</th><th>value</th></tr></thead>
+    <tbody>
+    
+      <tr><td>match_rate</td><td>0.5000 (6/12)</td></tr>
+    
+      <tr><td>auto_match_recall</td><td>1.0000 (6/6)</td></tr>
+    
+      <tr><td>auto_match_precision</td><td>1.0000 (6/6)</td></tr>
+    
+      <tr><td>false_match_rate</td><td>0.0000 (0/12)</td></tr>
+    
+      <tr><td>auto_close_recall</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>auto_close_precision</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>state_prediction_accuracy</td><td>0.6667 (8/12)</td></tr>
+    
+      <tr><td>exception_subtype_precision_macro</td><td>0.3333 (1 of 7 subtypes)</td></tr>
+    
+      <tr><td>exception_subtype_recall_macro</td><td>1.0000 (1 of 7 subtypes)</td></tr>
+    
+      <tr><td>declined_by_policy_rate</td><td>0.0000 (0/12)</td></tr>
+    
+      <tr><td>declined_by_confidence_rate</td><td>0.0000 (0/12)</td></tr>
+    
+      <tr><td>abstention_rate</td><td>0.0000 (0/12)</td></tr>
+    
+      <tr><td>deferred_to_human_rate</td><td>0.0000 (0/12)</td></tr>
+    
+      <tr><td>open_case_rate</td><td>0.5000 (6/12)</td></tr>
+    
+      <tr><td>value_coverage</td><td>0.6224 (2978020/4784360)</td></tr>
+    
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Outcome-state confusion matrix (rows = ground truth, columns = predicted)</h3>
+  <div class="table-scroll"><table><thead><tr><th></th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>total</th></tr></thead><tbody><tr><td>1. AUTO_MATCHED</td><td>6</td><td></td><td></td><td></td><td></td><td>6</td></tr><tr><td>2. AUTO_CLOSED</td><td></td><td></td><td></td><td></td><td></td><td>0</td></tr><tr><td>3. EXTERNAL_ACTION_REQUIRED</td><td></td><td></td><td>2</td><td></td><td></td><td>2</td></tr><tr><td>4. REVIEW_REQUIRED</td><td></td><td></td><td></td><td></td><td></td><td>0</td></tr><tr><td>5. ABSTAINED</td><td></td><td></td><td>4</td><td></td><td></td><td>4</td></tr><tr><td>predicted total</td><td>6</td><td>0</td><td>6</td><td>0</td><td>0</td><td></td></tr></tbody></table></div><p>agreement: 0.6667 (8/12)</p><ul class="checklist"><li>4 &times; ground truth ABSTAINED &rarr; predicted EXTERNAL_ACTION_REQUIRED</li></ul>
+
+  <h3>Exception-class confusion matrix (rows = ground truth, columns = predicted)</h3>
+  <div class="table-scroll"><table><thead><tr><th></th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>total</th></tr></thead><tbody><tr><td>1. NONE</td><td>6</td><td></td><td></td><td></td><td></td><td>6</td></tr><tr><td>2. ACCOUNTING_CORRECTION</td><td></td><td></td><td></td><td></td><td></td><td>0</td></tr><tr><td>3. OPERATIONAL_EXCEPTION</td><td></td><td></td><td>2</td><td></td><td></td><td>2</td></tr><tr><td>4. EXPECTED_TIMING_DIFFERENCE</td><td></td><td></td><td></td><td></td><td></td><td>0</td></tr><tr><td>5. AMBIGUOUS_CASE</td><td></td><td></td><td>4</td><td></td><td></td><td>4</td></tr><tr><td>predicted total</td><td>6</td><td>0</td><td>6</td><td>0</td><td>0</td><td></td></tr></tbody></table></div><p>agreement: 0.6667 (8/12)</p><ul class="checklist"><li>4 &times; ground truth AMBIGUOUS_CASE &rarr; predicted OPERATIONAL_EXCEPTION</li></ul>
+
+  <h3>Exception subtype precision / recall (macro over seven subtypes, REV-25)</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>subtype</th><th>precision</th><th>recall</th></tr></thead>
+    <tbody>
+    
+      <tr><td>SETTLEMENT_UTR_MISSING</td><td>undefined (0/0)</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>BANK_CREDIT_OVERDUE</td><td>0.3333 (2/6)</td><td>1.0000 (2/2)</td></tr>
+    
+      <tr><td>SETTLEMENT_AMOUNT_MISMATCH</td><td>undefined (0/0)</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>UNMATCHED_INBOUND_CREDIT</td><td>undefined (0/0)</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>REVERSAL_UNMATCHED</td><td>undefined (0/0)</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>DUPLICATE_CREDIT</td><td>undefined (0/0)</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td>DISPUTE_PENDING</td><td>undefined (0/0)</td><td>undefined (0/0)</td></tr>
+    
+      <tr><td><strong>macro average</strong></td>
+        <td><strong>0.3333 (1 of 7 subtypes)</strong></td>
+        <td><strong>1.0000 (1 of 7 subtypes)</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>§5.5 threshold review (provisional)</h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>metric</th><th>target</th><th>measured</th><th>verdict</th><th class="wrap">detail</th></tr></thead>
+    <tbody>
+    
+      <tr>
+        <td>false_match_rate</td>
+        <td>0</td>
+        <td>0.0000 (0/12)</td>
+        <td>MET</td>
+        <td class="wrap"> &mdash; Primary safety metric. Any non-zero value is investigated and reported case by case, never as a rate</td>
+      </tr>
+    
+      <tr>
+        <td>auto_close_precision</td>
+        <td>≥ 0.98</td>
+        <td>undefined (0/0)</td>
+        <td>UNDEFINED</td>
+        <td class="wrap">denominator is 0; the metric is undefined, not zero &mdash; Primary safety metric for adjustment. The 1.7.5 chain should make 1.00 reachable; whether it holds is the interesting question</td>
+      </tr>
+    
+      <tr>
+        <td>auto_match_precision</td>
+        <td>≥ 0.95</td>
+        <td>1.0000 (6/6)</td>
+        <td>MET</td>
+        <td class="wrap"></td>
+      </tr>
+    
+      <tr>
+        <td>auto_close_recall</td>
+        <td>0.80 – 0.95</td>
+        <td>undefined (0/0)</td>
+        <td>UNDEFINED</td>
+        <td class="wrap">denominator is 0; the metric is undefined, not zero &mdash; Nothing structural caps this — all 50 auto-close cases are in scope — so a low value means detection weakness, not policy discipline</td>
+      </tr>
+    
+      <tr>
+        <td>auto_match_recall</td>
+        <td>0.85 – 0.95</td>
+        <td>1.0000 (6/6)</td>
+        <td>ABOVE</td>
+        <td class="wrap"></td>
+      </tr>
+    
+      <tr>
+        <td>state_prediction_accuracy</td>
+        <td>0.80 – 0.90</td>
+        <td>0.6667 (8/12)</td>
+        <td>BELOW</td>
+        <td class="wrap"></td>
+      </tr>
+    
+      <tr>
+        <td>exception_subtype_recall_macro</td>
+        <td>0.70 – 0.85</td>
+        <td>1.0000 (1 of 7 subtypes)</td>
+        <td>ABOVE</td>
+        <td class="wrap"> &mdash; The Slot A metric. Thin per-subtype denominators; read with §5.2&#39;s breakdown, not alone</td>
+      </tr>
+    
+      <tr>
+        <td>exception_subtype_precision_macro</td>
+        <td>0.75 – 0.90</td>
+        <td>0.3333 (1 of 7 subtypes)</td>
+        <td>BELOW</td>
+        <td class="wrap"></td>
+      </tr>
+    
+      <tr>
+        <td>abstention_rate</td>
+        <td>operating range 8 – 18%</td>
+        <td>0.0000 (0/12)</td>
+        <td>BELOW</td>
+        <td class="wrap"> &mdash; Ground truth is 11.3% (§3.6). Below 8% suggests the system is forcing calls it should decline; above 18%, over-abstention degrading value</td>
+      </tr>
+    
+      <tr>
+        <td>declined_by_policy_rate</td>
+        <td>≈ 11.3%</td>
+        <td>0.0000 (0/12)</td>
+        <td>MET</td>
+        <td class="wrap">0 policy declines against §3.6&#39;s 0 ground-truth REVIEW_REQUIRED cases &mdash; By construction, not by performance. A large deviation is a bug in policy routing, and MUST be read as one</td>
+      </tr>
+    
+      <tr>
+        <td>match_rate</td>
+        <td>reported, no target</td>
+        <td>0.5000 (6/12)</td>
+        <td>REPORTED</td>
+        <td class="wrap"> &mdash; Not comparable to any industry figure — see the §3.5 enrichment disclosure</td>
+      </tr>
+    
+      <tr>
+        <td>value_coverage</td>
+        <td>reported, no target</td>
+        <td>0.6224 (2978020/4784360)</td>
+        <td>REPORTED</td>
+        <td class="wrap"></td>
+      </tr>
+    
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="case-log">
+  <h2>2. Case log</h2>
+  <p class="section-note">Every reconciliation case, its terminal state, and (click "evidence") the
+  linked source records and, for a closed case, the applied entry.</p>
+  <div class="controls">
+    <label>state
+      <select id="state-filter">
+        <option value="">all</option>
+        <option value="AUTO_MATCHED">AUTO_MATCHED</option><option value="AUTO_CLOSED">AUTO_CLOSED</option><option value="EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</option><option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option><option value="ABSTAINED">ABSTAINED</option>
+      </select>
+    </label>
+    <input id="search-box" type="search" placeholder="filter by case ID, class, subtype&hellip;">
+  </div>
+  <div class="table-scroll">
+  <table id="case-log-table">
+    <thead><tr><th>case ID</th><th>kind</th><th>state</th><th>class</th><th>subtype</th>
+      <th>match tier</th><th>residual</th><th>evidence</th></tr></thead>
+    <tbody id="case-log-body">
+    
+      <tr data-state="EXTERNAL_ACTION_REQUIRED" data-search="con_setl_undec_a1 OPERATIONAL_EXCEPTION BANK_CREDIT_OVERDUE">
+        <td>con_setl_undec_a1</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td>3</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_undec_a1<br>
+              <strong>triggered:</strong> BANK_CREDIT_OVERDUE<br>
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="EXTERNAL_ACTION_REQUIRED" data-search="con_setl_undec_a2 OPERATIONAL_EXCEPTION BANK_CREDIT_OVERDUE">
+        <td>con_setl_undec_a2</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td>3</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_undec_a2<br>
+              <strong>triggered:</strong> BANK_CREDIT_OVERDUE<br>
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="EXTERNAL_ACTION_REQUIRED" data-search="con_setl_undec_b1 OPERATIONAL_EXCEPTION BANK_CREDIT_OVERDUE">
+        <td>con_setl_undec_b1</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td>3</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_undec_b1<br>
+              <strong>triggered:</strong> BANK_CREDIT_OVERDUE<br>
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="EXTERNAL_ACTION_REQUIRED" data-search="con_setl_undec_b2 OPERATIONAL_EXCEPTION BANK_CREDIT_OVERDUE">
+        <td>con_setl_undec_b2</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td>3</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_undec_b2<br>
+              <strong>triggered:</strong> BANK_CREDIT_OVERDUE<br>
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="AUTO_MATCHED" data-search="con_setl_dec_c_upi NONE ">
+        <td>con_setl_dec_c_upi</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge AUTO_MATCHED">AUTO_MATCHED</span></td>
+        <td>NONE</td>
+        <td>—</td>
+        <td>2</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_dec_c_1_upi, con_pay_dec_c_2_upi, con_bank_dec_c<br>
+              
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="EXTERNAL_ACTION_REQUIRED" data-search="con_setl_dec_c_card OPERATIONAL_EXCEPTION BANK_CREDIT_OVERDUE">
+        <td>con_setl_dec_c_card</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td>3</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_dec_c_1_card, con_pay_dec_c_2_card<br>
+              <strong>triggered:</strong> BANK_CREDIT_OVERDUE<br>
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="AUTO_MATCHED" data-search="con_setl_dec_d_upi NONE ">
+        <td>con_setl_dec_d_upi</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge AUTO_MATCHED">AUTO_MATCHED</span></td>
+        <td>NONE</td>
+        <td>—</td>
+        <td>2</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_dec_d_1_upi, con_pay_dec_d_2_upi, con_bank_dec_d<br>
+              
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="EXTERNAL_ACTION_REQUIRED" data-search="con_setl_dec_d_card OPERATIONAL_EXCEPTION BANK_CREDIT_OVERDUE">
+        <td>con_setl_dec_d_card</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td>3</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_dec_d_1_card, con_pay_dec_d_2_card<br>
+              <strong>triggered:</strong> BANK_CREDIT_OVERDUE<br>
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="AUTO_MATCHED" data-search="con_setl_ctrl_1 NONE ">
+        <td>con_setl_ctrl_1</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge AUTO_MATCHED">AUTO_MATCHED</span></td>
+        <td>NONE</td>
+        <td>—</td>
+        <td>0</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_ctrl_1, con_bank_ctrl_1<br>
+              
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="AUTO_MATCHED" data-search="con_setl_ctrl_2 NONE ">
+        <td>con_setl_ctrl_2</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge AUTO_MATCHED">AUTO_MATCHED</span></td>
+        <td>NONE</td>
+        <td>—</td>
+        <td>0</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_ctrl_2, con_bank_ctrl_2<br>
+              
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="AUTO_MATCHED" data-search="con_setl_ctrl_3 NONE ">
+        <td>con_setl_ctrl_3</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge AUTO_MATCHED">AUTO_MATCHED</span></td>
+        <td>NONE</td>
+        <td>—</td>
+        <td>0</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_ctrl_3, con_bank_ctrl_3<br>
+              
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+      <tr data-state="AUTO_MATCHED" data-search="con_setl_ctrl_4 NONE ">
+        <td>con_setl_ctrl_4</td>
+        <td>settlement_anchored</td>
+        <td><span class="badge AUTO_MATCHED">AUTO_MATCHED</span></td>
+        <td>NONE</td>
+        <td>—</td>
+        <td>0</td>
+        <td>₹0.00</td>
+        <td>
+          <details><summary>evidence</summary>
+            <div class="drill">
+              <strong>linked records:</strong> con_pay_ctrl_4, con_bank_ctrl_4<br>
+              
+              
+              
+              
+              
+            </div>
+          </details>
+        </td>
+      </tr>
+    
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="audit-trail">
+  <h2>3. Audit trail — AUTO_CLOSED cases</h2>
+  <p class="section-note">Invariant 1.7.3: every automatic decision cites the source records and
+  deterministic calculation that justify it, and the specific safety validations passed (§1.7.5).</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>case ID</th><th>template(s)</th><th>cited records</th><th>legs (deterministic)</th><th>validations</th></tr></thead>
+    <tbody>
+    
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="exceptions">
+  <h2>4. Exception report</h2>
+  <p class="section-note">Every non-AUTO_MATCHED, non-AUTO_CLOSED case, categorized, with a
+  recommended next step or an explicit abstention rationale. Text marked
+  <span class="ai-badge">model-generated</span> is Slot B prose over deterministic facts (§4.2) —
+  never evidence in its own right.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>case ID</th><th>state</th><th>class</th><th>subtype</th><th class="wrap">reasoning</th></tr></thead>
+    <tbody>
+    
+      <tr>
+        <td>con_setl_undec_a1</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td class="wrap">Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.
+          <span class="ai-badge">model-generated</span>
+        </td>
+      </tr>
+    
+      <tr>
+        <td>con_setl_undec_a2</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td class="wrap">Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.
+          <span class="ai-badge">model-generated</span>
+        </td>
+      </tr>
+    
+      <tr>
+        <td>con_setl_undec_b1</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td class="wrap">Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.
+          <span class="ai-badge">model-generated</span>
+        </td>
+      </tr>
+    
+      <tr>
+        <td>con_setl_undec_b2</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td class="wrap">Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.
+          <span class="ai-badge">model-generated</span>
+        </td>
+      </tr>
+    
+      <tr>
+        <td>con_setl_dec_c_card</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td class="wrap">Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.
+          <span class="ai-badge">model-generated</span>
+        </td>
+      </tr>
+    
+      <tr>
+        <td>con_setl_dec_d_card</td>
+        <td><span class="badge EXTERNAL_ACTION_REQUIRED">EXTERNAL_ACTION_REQUIRED</span></td>
+        <td>OPERATIONAL_EXCEPTION</td>
+        <td>BANK_CREDIT_OVERDUE</td>
+        <td class="wrap">Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.
+          <span class="ai-badge">model-generated</span>
+        </td>
+      </tr>
+    
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="ledger-diff">
+  <h2>5. Reconciled-ledger diff</h2>
+  <p class="section-note">Every row this run added to the merchant's ledger — the merchant's own
+  bookkeeping is loaded unchanged, so this is the full before/after delta.</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>journal entry ID</th><th>date</th><th>case ID</th><th>resolution ID</th>
+      <th>account</th><th>debit</th><th>credit</th><th>reference</th></tr></thead>
+    <tbody>
+    
+    
+      <tr><td colspan="8">No entries were posted this run.</td></tr>
+    
+    </tbody>
+  </table>
+  </div>
+</section>
+
+</main>
+
+<footer class="report-footer">
+  Generated by the AI Settlement Close Controller pipeline (spec.md, FR-11). All input data is
+  synthetic (FR-01a). No network dependency other than the LLM inference endpoint, and this file
+  itself fetches nothing (NFR-05).
+</footer>
+
+<script type="application/json" id="report-data">{"arm": "baseline", "cases": [{"applied_entries": [], "case_id": "con_setl_undec_a1", "classified_subtype": "BANK_CREDIT_OVERDUE", "decline_reason": null, "exception_class": "OPERATIONAL_EXCEPTION", "in_settlement_window": false, "kind": "settlement_anchored", "linked_records": ["con_pay_undec_a1"], "match_tier": 3, "narration_kind": "recommended_action", "narration_model_generated": true, "narration_text": "Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.", "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "EXTERNAL_ACTION_REQUIRED", "triggered_subtypes": ["BANK_CREDIT_OVERDUE"], "validations": []}, {"applied_entries": [], "case_id": "con_setl_undec_a2", "classified_subtype": "BANK_CREDIT_OVERDUE", "decline_reason": null, "exception_class": "OPERATIONAL_EXCEPTION", "in_settlement_window": false, "kind": "settlement_anchored", "linked_records": ["con_pay_undec_a2"], "match_tier": 3, "narration_kind": "recommended_action", "narration_model_generated": true, "narration_text": "Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.", "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "EXTERNAL_ACTION_REQUIRED", "triggered_subtypes": ["BANK_CREDIT_OVERDUE"], "validations": []}, {"applied_entries": [], "case_id": "con_setl_undec_b1", "classified_subtype": "BANK_CREDIT_OVERDUE", "decline_reason": null, "exception_class": "OPERATIONAL_EXCEPTION", "in_settlement_window": false, "kind": "settlement_anchored", "linked_records": ["con_pay_undec_b1"], "match_tier": 3, "narration_kind": "recommended_action", "narration_model_generated": true, "narration_text": "Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.", "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "EXTERNAL_ACTION_REQUIRED", "triggered_subtypes": ["BANK_CREDIT_OVERDUE"], "validations": []}, {"applied_entries": [], "case_id": "con_setl_undec_b2", "classified_subtype": "BANK_CREDIT_OVERDUE", "decline_reason": null, "exception_class": "OPERATIONAL_EXCEPTION", "in_settlement_window": false, "kind": "settlement_anchored", "linked_records": ["con_pay_undec_b2"], "match_tier": 3, "narration_kind": "recommended_action", "narration_model_generated": true, "narration_text": "Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.", "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "EXTERNAL_ACTION_REQUIRED", "triggered_subtypes": ["BANK_CREDIT_OVERDUE"], "validations": []}, {"applied_entries": [], "case_id": "con_setl_dec_c_upi", "classified_subtype": null, "decline_reason": null, "exception_class": "NONE", "in_settlement_window": null, "kind": "settlement_anchored", "linked_records": ["con_pay_dec_c_1_upi", "con_pay_dec_c_2_upi", "con_bank_dec_c"], "match_tier": 2, "narration_kind": null, "narration_model_generated": null, "narration_text": null, "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "AUTO_MATCHED", "triggered_subtypes": [], "validations": []}, {"applied_entries": [], "case_id": "con_setl_dec_c_card", "classified_subtype": "BANK_CREDIT_OVERDUE", "decline_reason": null, "exception_class": "OPERATIONAL_EXCEPTION", "in_settlement_window": false, "kind": "settlement_anchored", "linked_records": ["con_pay_dec_c_1_card", "con_pay_dec_c_2_card"], "match_tier": 3, "narration_kind": "recommended_action", "narration_model_generated": true, "narration_text": "Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.", "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "EXTERNAL_ACTION_REQUIRED", "triggered_subtypes": ["BANK_CREDIT_OVERDUE"], "validations": []}, {"applied_entries": [], "case_id": "con_setl_dec_d_upi", "classified_subtype": null, "decline_reason": null, "exception_class": "NONE", "in_settlement_window": null, "kind": "settlement_anchored", "linked_records": ["con_pay_dec_d_1_upi", "con_pay_dec_d_2_upi", "con_bank_dec_d"], "match_tier": 2, "narration_kind": null, "narration_model_generated": null, "narration_text": null, "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "AUTO_MATCHED", "triggered_subtypes": [], "validations": []}, {"applied_entries": [], "case_id": "con_setl_dec_d_card", "classified_subtype": "BANK_CREDIT_OVERDUE", "decline_reason": null, "exception_class": "OPERATIONAL_EXCEPTION", "in_settlement_window": false, "kind": "settlement_anchored", "linked_records": ["con_pay_dec_d_1_card", "con_pay_dec_d_2_card"], "match_tier": 3, "narration_kind": "recommended_action", "narration_model_generated": true, "narration_text": "Please contact the acquiring bank to investigate the missing credit for this settlement, as the settlement window has elapsed without a matching bank credit.", "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "EXTERNAL_ACTION_REQUIRED", "triggered_subtypes": ["BANK_CREDIT_OVERDUE"], "validations": []}, {"applied_entries": [], "case_id": "con_setl_ctrl_1", "classified_subtype": null, "decline_reason": null, "exception_class": "NONE", "in_settlement_window": null, "kind": "settlement_anchored", "linked_records": ["con_pay_ctrl_1", "con_bank_ctrl_1"], "match_tier": 0, "narration_kind": null, "narration_model_generated": null, "narration_text": null, "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "AUTO_MATCHED", "triggered_subtypes": [], "validations": []}, {"applied_entries": [], "case_id": "con_setl_ctrl_2", "classified_subtype": null, "decline_reason": null, "exception_class": "NONE", "in_settlement_window": null, "kind": "settlement_anchored", "linked_records": ["con_pay_ctrl_2", "con_bank_ctrl_2"], "match_tier": 0, "narration_kind": null, "narration_model_generated": null, "narration_text": null, "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "AUTO_MATCHED", "triggered_subtypes": [], "validations": []}, {"applied_entries": [], "case_id": "con_setl_ctrl_3", "classified_subtype": null, "decline_reason": null, "exception_class": "NONE", "in_settlement_window": null, "kind": "settlement_anchored", "linked_records": ["con_pay_ctrl_3", "con_bank_ctrl_3"], "match_tier": 0, "narration_kind": null, "narration_model_generated": null, "narration_text": null, "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "AUTO_MATCHED", "triggered_subtypes": [], "validations": []}, {"applied_entries": [], "case_id": "con_setl_ctrl_4", "classified_subtype": null, "decline_reason": null, "exception_class": "NONE", "in_settlement_window": null, "kind": "settlement_anchored", "linked_records": ["con_pay_ctrl_4", "con_bank_ctrl_4"], "match_tier": 0, "narration_kind": null, "narration_model_generated": null, "narration_text": null, "policy_decisions": [], "proposed_entries": [], "replayed_entries": [], "residual_paise": 0, "state": "AUTO_MATCHED", "triggered_subtypes": [], "validations": []}], "eval_report": {"arm": "baseline", "exception_class_matrix": {"axis": "exception_class", "counts": [[6, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 2, 0, 0], [0, 0, 0, 0, 0], [0, 0, 4, 0, 0]], "labels": ["NONE", "ACCOUNTING_CORRECTION", "OPERATIONAL_EXCEPTION", "EXPECTED_TIMING_DIFFERENCE", "AMBIGUOUS_CASE"]}, "metrics": {"abstention_rate": {"denominator": 12, "numerator": 0, "value": 0.0}, "auto_applied_entry_count": 0, "auto_close_precision": {"denominator": 0, "numerator": 0, "value": null}, "auto_close_recall": {"denominator": 0, "numerator": 0, "value": null}, "auto_match_precision": {"denominator": 6, "numerator": 6, "value": 1.0}, "auto_match_recall": {"denominator": 6, "numerator": 6, "value": 1.0}, "classification_counts": {"AMBIGUOUS_CASE": 0, "BANK_CREDIT_OVERDUE": 6, "DISPUTE_PENDING": 0, "DUPLICATE_CREDIT": 0, "REVERSAL_UNMATCHED": 0, "SETTLEMENT_AMOUNT_MISMATCH": 0, "SETTLEMENT_UTR_MISSING": 0, "UNMATCHED_INBOUND_CREDIT": 0}, "declined_by_confidence_rate": {"denominator": 12, "numerator": 0, "value": 0.0}, "declined_by_policy_rate": {"denominator": 12, "numerator": 0, "value": 0.0}, "deferred_to_human_rate": {"denominator": 12, "numerator": 0, "value": 0.0}, "exception_subtype_precision_macro": {"subtypes_averaged": 1, "subtypes_eligible": 7, "value": 0.3333333333333333}, "exception_subtype_recall_macro": {"subtypes_averaged": 1, "subtypes_eligible": 7, "value": 1.0}, "false_match_rate": {"denominator": 12, "numerator": 0, "value": 0.0}, "ground_truth_state_counts": {"ABSTAINED": 4, "AUTO_CLOSED": 0, "AUTO_MATCHED": 6, "EXTERNAL_ACTION_REQUIRED": 2, "REVIEW_REQUIRED": 0}, "match_rate": {"denominator": 12, "numerator": 6, "value": 0.5}, "open_case_rate": {"denominator": 12, "numerator": 6, "value": 0.5}, "predicted_state_counts": {"ABSTAINED": 0, "AUTO_CLOSED": 0, "AUTO_MATCHED": 6, "EXTERNAL_ACTION_REQUIRED": 6, "REVIEW_REQUIRED": 0}, "provenance": {"cache_hit_rate": 1.0, "git_sha": "c4ae4dcac19bcc918eadf2fd4ef933f6ce946583", "model_id": "accounts/fireworks/models/gpt-oss-120b", "seed": 0, "snapshot_date": "2026-08-28"}, "state_prediction_accuracy": {"denominator": 12, "numerator": 8, "value": 0.6666666666666666}, "subtype_metrics": [{"precision": {"denominator": 0, "numerator": 0, "value": null}, "recall": {"denominator": 0, "numerator": 0, "value": null}, "subtype": "SETTLEMENT_UTR_MISSING"}, {"precision": {"denominator": 6, "numerator": 2, "value": 0.3333333333333333}, "recall": {"denominator": 2, "numerator": 2, "value": 1.0}, "subtype": "BANK_CREDIT_OVERDUE"}, {"precision": {"denominator": 0, "numerator": 0, "value": null}, "recall": {"denominator": 0, "numerator": 0, "value": null}, "subtype": "SETTLEMENT_AMOUNT_MISMATCH"}, {"precision": {"denominator": 0, "numerator": 0, "value": null}, "recall": {"denominator": 0, "numerator": 0, "value": null}, "subtype": "UNMATCHED_INBOUND_CREDIT"}, {"precision": {"denominator": 0, "numerator": 0, "value": null}, "recall": {"denominator": 0, "numerator": 0, "value": null}, "subtype": "REVERSAL_UNMATCHED"}, {"precision": {"denominator": 0, "numerator": 0, "value": null}, "recall": {"denominator": 0, "numerator": 0, "value": null}, "subtype": "DUPLICATE_CREDIT"}, {"precision": {"denominator": 0, "numerator": 0, "value": null}, "recall": {"denominator": 0, "numerator": 0, "value": null}, "subtype": "DISPUTE_PENDING"}], "total_cases": 12, "value_coverage": {"denominator": 4784360, "numerator": 2978020, "value": 0.6224489795918368}}, "seed": 0, "state_matrix": {"axis": "outcome_state", "counts": [[6, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 2, 0, 0], [0, 0, 0, 0, 0], [0, 0, 4, 0, 0]], "labels": ["AUTO_MATCHED", "AUTO_CLOSED", "EXTERNAL_ACTION_REQUIRED", "REVIEW_REQUIRED", "ABSTAINED"]}, "threshold_review": [{"detail": "", "measured": {"denominator": 12, "numerator": 0, "value": 0.0}, "target": {"kind": "at_most", "lower": null, "metric": "false_match_rate", "note": "Primary safety metric. Any non-zero value is investigated and reported case by case, never as a rate", "target_text": "0", "upper": 0.0}, "verdict": "MET"}, {"detail": "denominator is 0; the metric is undefined, not zero", "measured": {"denominator": 0, "numerator": 0, "value": null}, "target": {"kind": "at_least", "lower": 0.98, "metric": "auto_close_precision", "note": "Primary safety metric for adjustment. The 1.7.5 chain should make 1.00 reachable; whether it holds is the interesting question", "target_text": "\u2265 0.98", "upper": null}, "verdict": "UNDEFINED"}, {"detail": "", "measured": {"denominator": 6, "numerator": 6, "value": 1.0}, "target": {"kind": "at_least", "lower": 0.95, "metric": "auto_match_precision", "note": "", "target_text": "\u2265 0.95", "upper": null}, "verdict": "MET"}, {"detail": "denominator is 0; the metric is undefined, not zero", "measured": {"denominator": 0, "numerator": 0, "value": null}, "target": {"kind": "band", "lower": 0.8, "metric": "auto_close_recall", "note": "Nothing structural caps this \u2014 all 50 auto-close cases are in scope \u2014 so a low value means detection weakness, not policy discipline", "target_text": "0.80 \u2013 0.95", "upper": 0.95}, "verdict": "UNDEFINED"}, {"detail": "", "measured": {"denominator": 6, "numerator": 6, "value": 1.0}, "target": {"kind": "band", "lower": 0.85, "metric": "auto_match_recall", "note": "", "target_text": "0.85 \u2013 0.95", "upper": 0.95}, "verdict": "ABOVE"}, {"detail": "", "measured": {"denominator": 12, "numerator": 8, "value": 0.6666666666666666}, "target": {"kind": "band", "lower": 0.8, "metric": "state_prediction_accuracy", "note": "", "target_text": "0.80 \u2013 0.90", "upper": 0.9}, "verdict": "BELOW"}, {"detail": "", "measured": {"subtypes_averaged": 1, "subtypes_eligible": 7, "value": 1.0}, "target": {"kind": "band", "lower": 0.7, "metric": "exception_subtype_recall_macro", "note": "The Slot A metric. Thin per-subtype denominators; read with \u00a75.2's breakdown, not alone", "target_text": "0.70 \u2013 0.85", "upper": 0.85}, "verdict": "ABOVE"}, {"detail": "", "measured": {"subtypes_averaged": 1, "subtypes_eligible": 7, "value": 0.3333333333333333}, "target": {"kind": "band", "lower": 0.75, "metric": "exception_subtype_precision_macro", "note": "", "target_text": "0.75 \u2013 0.90", "upper": 0.9}, "verdict": "BELOW"}, {"detail": "", "measured": {"denominator": 12, "numerator": 0, "value": 0.0}, "target": {"kind": "band", "lower": 0.08, "metric": "abstention_rate", "note": "Ground truth is 11.3% (\u00a73.6). Below 8% suggests the system is forcing calls it should decline; above 18%, over-abstention degrading value", "target_text": "operating range 8 \u2013 18%", "upper": 0.18}, "verdict": "BELOW"}, {"detail": "0 policy declines against \u00a73.6's 0 ground-truth REVIEW_REQUIRED cases", "measured": {"denominator": 12, "numerator": 0, "value": 0.0}, "target": {"kind": "ground_truth_count", "lower": null, "metric": "declined_by_policy_rate", "note": "By construction, not by performance. A large deviation is a bug in policy routing, and MUST be read as one", "target_text": "\u2248 11.3%", "upper": null}, "verdict": "MET"}, {"detail": "", "measured": {"denominator": 12, "numerator": 6, "value": 0.5}, "target": {"kind": "reported", "lower": null, "metric": "match_rate", "note": "Not comparable to any industry figure \u2014 see the \u00a73.5 enrichment disclosure", "target_text": "reported, no target", "upper": null}, "verdict": "REPORTED"}, {"detail": "", "measured": {"denominator": 4784360, "numerator": 2978020, "value": 0.6224489795918368}, "target": {"kind": "reported", "lower": null, "metric": "value_coverage", "note": "", "target_text": "reported, no target", "upper": null}, "verdict": "REPORTED"}]}, "ledger_diff": [], "seed": 0, "snapshot_date": "2026-08-28"}</script>
+<script>
+(function () {
+  "use strict";
+  var stateFilter = document.getElementById("state-filter");
+  var searchBox = document.getElementById("search-box");
+  var rows = document.querySelectorAll("#case-log-body tr");
+
+  function applyFilter() {
+    var state = stateFilter.value;
+    var query = searchBox.value.trim().toUpperCase();
+    rows.forEach(function (row) {
+      var matchesState = !state || row.dataset.state === state;
+      var matchesQuery = !query || row.dataset.search.toUpperCase().indexOf(query) !== -1;
+      row.hidden = !(matchesState && matchesQuery);
+    });
+  }
+
+  if (stateFilter && searchBox) {
+    stateFilter.addEventListener("change", applyFilter);
+    searchBox.addEventListener("input", applyFilter);
+  }
+})();
+</script>
+
+</body>
+</html>
