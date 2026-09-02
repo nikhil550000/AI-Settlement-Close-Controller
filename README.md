@@ -200,7 +200,7 @@ Note the contrast with the semantics ablation above, which is the actual lesson:
 
 **MEASURED, NOT TUNED — with one disclosed exception.** No §5.5 threshold, predicate, or classifier behaviour has been changed in response to any figure in this README or the committed reports. The one exception, recorded here and in the code: `_REVERSAL_INSTRUCTIONS` in `pipeline/semantics.py` was revised once after measurement, because the first version answered `false` for two `NEFT RTN <ref> <party>` lines whose shape it had already accepted elsewhere. Naming the abbreviation vocabulary in the prompt is the same move the keyword arm makes with `REVERSAL_KEYWORDS`, at the level of a concept rather than a batch's literals. It was written against `data/heldout_vocab/`, a development artifact — not §5.1's held-out seed-2 batch.
 
-**Performance (FR-02, NFR-02, NFR-03), on `Windows AMD64, Intel64 Family 6 Model 154 Stepping 4, Python 3.11.15`:** reference batch (150 cases) 605–656 cases/s; scale batch (seed 3, 362 cases) 299–310 cases/s. Reproduce with `tools/measure_performance.py`.
+**Performance (FR-02, NFR-02, NFR-03), on `Windows AMD64, Intel64 Family 6 Model 154 Stepping 4, Python 3.11.15`, three runs each:** reference batch (150 cases, 7,111 raw records) 685–795 cases/s; scale batch (seed 3, 362 cases, 19,355 raw records) 368–383 cases/s. Re-measured after the `semantics` refactor — the indirection cost nothing, and both figures came in above the pre-refactor measurement (605–656 and 299–310), which is machine variance rather than an optimisation and is reported as the current range rather than the better one. Reproduce with `uv run python tools/measure_performance.py`.
 
 ## What broke, and how it was recovered
 
