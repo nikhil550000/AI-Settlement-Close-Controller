@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Where the model is allowed to act",
+    "quality_profile": "showcase",
+    "legend": { "mode": "auto", "entries": {
+      "cloud": { "label": "Model-answered surface" },
+      "security": { "label": "Deterministic gate it must pass" },
+      "database": { "label": "The ledger" },
+      "frontend": { "label": "Human-read output" }
+    } },
+    "viewBox": [1380, 500],
+    "repository": {
+      "url": "https://github.com/nikhil550000/AI-Settlement-Close-Controller",
+      "revision": "a138d5707562452e09d903adf0764afe564eb3cb"
+    },
+    "views": [
+      { "id": "money-path", "label": "The money path", "focus": ["m_sem", "m_contested", "m_slota", "g_substring", "g_grounding", "g_chain", "ledger"], "note": "Every model answer that can affect a posting, and the deterministic check standing in front of it." },
+      { "id": "off-path", "label": "Off the money path", "focus": ["m_slotb", "m_adapter", "g_nine", "report"], "note": "Two surfaces with no route to the ledger at all — reviewer prose, and a proposed column map." }
+    ]
+  },
+  "components": [
+    { "id": "m_sem", "type": "cloud", "label": "Semantics", "sublabel": "five routing reads", "tag": "a bool, or a verbatim name", "pos": [40, 40], "size": [190, 88], "sources": [{ "path": "pipeline/semantics.py" }] },
+    { "id": "m_contested", "type": "cloud", "label": "Contested credit", "sublabel": "which settlement is paid", "tag": "the one read that moves money", "pos": [310, 40], "size": [190, 88], "sources": [{ "path": "pipeline/semantics.py", "label": "resolve_contested_credit" }] },
+    { "id": "m_slota", "type": "cloud", "label": "Slot A", "sublabel": "one of eight subtype labels", "tag": "never an account or amount", "pos": [580, 40], "size": [190, 88], "sources": [{ "path": "pipeline/classifier.py" }] },
+    { "id": "m_adapter", "type": "cloud", "label": "Adapter inference", "sublabel": "a proposed column map", "tag": "propose, verify, repair", "pos": [850, 40], "size": [190, 88], "sources": [{ "path": "pipeline/adapters/inference.py" }] },
+    { "id": "m_slotb", "type": "cloud", "label": "Slot B", "sublabel": "prose for a human reviewer", "tag": "badged model-generated", "pos": [1120, 40], "size": [190, 88], "sources": [{ "path": "pipeline/narration.py" }] },
+
+    { "id": "g_substring", "type": "security", "label": "Substring check", "sublabel": "the name must be in the line", "pos": [40, 190], "size": [190, 88], "sources": [{ "path": "pipeline/semantics.py" }] },
+    { "id": "g_grounding", "type": "security", "label": "The grounding gate", "sublabel": "its payment method, as a word", "pos": [310, 190], "size": [190, 88], "sources": [{ "path": "pipeline/semantics.py" }] },
+    { "id": "g_nine", "type": "security", "label": "Nine deterministic checks", "sublabel": "incl. balance_continuity", "tag": "accepted, or a clean give-up", "pos": [850, 190], "size": [190, 88], "sources": [{ "path": "pipeline/adapters/inference.py" }] },
+
+    { "id": "g_chain", "type": "security", "label": "The 1.7.5 validator chain", "sublabel": "balanced · allowlisted · evidenced · idempotent · zero post-adjustment residual", "pos": [40, 340], "size": [730, 88], "sources": [{ "path": "pipeline/validator.py" }, { "path": "pipeline/apply.py" }] },
+    { "id": "ledger", "type": "database", "label": "The ledger", "sublabel": "CONTROLLER_ADJUSTMENT rows", "pos": [850, 340], "size": [190, 88], "sources": [{ "path": "pipeline/storage.py" }] },
+    { "id": "report", "type": "frontend", "label": "The report", "sublabel": "read by a human", "pos": [1120, 340], "size": [190, 88], "sources": [{ "path": "pipeline/report.py" }] }
+  ],
+  "connections": [
+    { "id": "sem-gate", "from": "m_sem", "to": "g_substring", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "contested-gate", "from": "m_contested", "to": "g_grounding", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "adapter-gate", "from": "m_adapter", "to": "g_nine", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "slota-chain", "from": "m_slota", "to": "g_chain", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "substring-chain", "from": "g_substring", "to": "g_chain", "variant": "security", "fromSide": "bottom", "toSide": "top" },
+    { "id": "grounding-chain", "from": "g_grounding", "to": "g_chain", "variant": "security", "fromSide": "bottom", "toSide": "top" },
+    { "id": "chain-ledger", "from": "g_chain", "to": "ledger", "label": "only path in", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "slotb-report", "from": "m_slotb", "to": "report", "label": "off the money path", "variant": "dashed", "fromSide": "bottom", "toSide": "top" , "labelAt": [1215, 234] }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "Never, on any path", "items": ["Originate an account", "Originate an amount", "Originate a posted narration"] },
+    { "dot": "cyan", "title": "Every gate existed before the model did", "items": ["A counterparty name is trusted only after it is found as a substring of the line the bank wrote", "A contested settlement wins only if its own payment method appears as a word in that narration"] },
+    { "dot": "emerald", "title": "Two surfaces never touch money", "items": ["Slot B writes prose for a reviewer and reaches only the report", "Adapter inference proposes column names and a strftime pattern — its schema has no field for an amount or an account"] }
+  ]
+}

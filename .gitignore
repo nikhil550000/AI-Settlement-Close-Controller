@@ -19,3 +19,8 @@ ledger.db
 /.run/
 
 .claude
+
+# Archify diagram workspace: the delivered HTML viewers, their JSON specs and the
+# visual-check sidecars are large build products. The README ships the rendered
+# PNGs from assets/diagrams/ instead.
+/docs/diagrams/

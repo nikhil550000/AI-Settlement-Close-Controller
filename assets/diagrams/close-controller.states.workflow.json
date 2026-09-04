@@ -1,0 +1,67 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How one case reaches its terminal state",
+    "quality_profile": "showcase",
+    "legend": { "mode": "auto", "entries": {
+      "backend": { "label": "Deterministic branch or closed state" },
+      "security": { "label": "Policy stop or declined candidate" },
+      "messagebus": { "label": "Needs an action outside the ledger" },
+      "external": { "label": "Case boundary" }
+    } },
+    "views": [
+      { "id": "cascade", "label": "The six branches", "focus": ["entry", "b1", "b2", "b3", "b4", "b5"], "note": "Each branch is evaluated only if the one before it did not fire — the order is the precedence." },
+      { "id": "closes", "label": "Closes without a human", "focus": ["b2", "b5", "auto_closed", "auto_matched"], "note": "The two states that need no operator: a correction that landed, and a case that was already clean." },
+      { "id": "handoff", "label": "Leaves the automated path", "focus": ["b1", "b3", "b4", "rr_policy", "rr_conf", "external_action", "abstained"], "note": "Four different reasons a case stops short, each recorded with its own reason." }
+    ]
+  },
+  "lanes": [
+    { "id": "closed", "label": "Closes with no operator" },
+    { "id": "cascade", "label": "assign_state — six branches, in order" },
+    { "id": "open", "label": "Leaves the automated path", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "Evidence in hand", "fromCol": 0, "toCol": 0 },
+    { "id": "precedence", "label": "The order of the branches is the precedence", "fromCol": 1, "toCol": 5, "variant": "emphasis" }
+  ],
+  "mainPath": ["entry", "b1", "b2", "b3", "b4", "b5"],
+  "semanticChecks": {
+    "allowedRoots": ["entry"],
+    "allowedTerminals": ["rr_policy", "auto_closed", "rr_conf", "external_action", "auto_matched", "abstained"]
+  },
+  "nodes": [
+    { "id": "entry", "lane": "cascade", "col": 0, "type": "external", "label": "One case", "sublabel": "after components 2 to 7", "width": 150 },
+    { "id": "b1", "lane": "cascade", "col": 1, "type": "security", "label": "1 · Policy exclusion?", "sublabel": "checked before all else", "width": 150 },
+    { "id": "b2", "lane": "cascade", "col": 2, "type": "backend", "label": "2 · Correction landed?", "sublabel": "applied and re-reconciled", "width": 150 },
+    { "id": "b3", "lane": "cascade", "col": 3, "type": "backend", "label": "3 · Candidate failed?", "sublabel": "the 1.7.5 chain", "width": 150 },
+    { "id": "b4", "lane": "cascade", "col": 4, "type": "backend", "label": "4 · Trigger fired?", "sublabel": "subtype or unmatched credit", "width": 150 },
+    { "id": "b5", "lane": "cascade", "col": 5, "type": "backend", "label": "5 · Residual 0 paise?", "sublabel": "nothing left to correct", "width": 150 },
+
+    { "id": "auto_closed", "lane": "closed", "col": 2, "type": "backend", "label": "AUTO_CLOSED", "sublabel": "correction posted", "width": 150 },
+    { "id": "auto_matched", "lane": "closed", "col": 5, "type": "backend", "label": "AUTO_MATCHED", "sublabel": "no accounting action", "width": 150 },
+
+    { "id": "rr_policy", "lane": "open", "col": 1, "type": "security", "label": "REVIEW_REQUIRED", "sublabel": "reason = policy", "width": 150 },
+    { "id": "rr_conf", "lane": "open", "col": 3, "type": "security", "label": "REVIEW_REQUIRED", "sublabel": "reason = confidence", "width": 150 },
+    { "id": "external_action", "lane": "open", "col": 4, "type": "messagebus", "label": "EXTERNAL_ACTION", "sublabel": "no entry can resolve it", "width": 150 },
+    { "id": "abstained", "lane": "open", "col": 5, "type": "external", "label": "6 · ABSTAINED", "sublabel": "designed, not a failure", "width": 150 }
+  ],
+  "edges": [
+    { "id": "e-entry", "from": "entry", "to": "b1", "variant": "emphasis" },
+    { "id": "e-b1-b2", "from": "b1", "to": "b2", "variant": "emphasis" },
+    { "id": "e-b2-b3", "from": "b2", "to": "b3", "variant": "emphasis" },
+    { "id": "e-b3-b4", "from": "b3", "to": "b4", "variant": "emphasis" },
+    { "id": "e-b4-b5", "from": "b4", "to": "b5", "variant": "emphasis" },
+
+    { "id": "e-b1-policy", "from": "b1", "to": "rr_policy", "label": "yes", "variant": "security", "role": "error"},
+    { "id": "e-b2-closed", "from": "b2", "to": "auto_closed", "label": "yes", "variant": "emphasis", "role": "branch"},
+    { "id": "e-b3-conf", "from": "b3", "to": "rr_conf", "label": "yes", "variant": "security", "role": "error"},
+    { "id": "e-b4-external", "from": "b4", "to": "external_action", "label": "yes", "variant": "security", "role": "error"},
+    { "id": "e-b5-matched", "from": "b5", "to": "auto_matched", "label": "yes", "variant": "emphasis", "role": "branch"},
+    { "id": "e-b5-abstain", "from": "b5", "to": "abstained", "label": "no", "variant": "dashed", "role": "branch"}
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Two orderings are load-bearing", "items": ["A policy exclusion is evaluated first — regardless of model confidence, and regardless of whether the entry would have validated", "A correction that landed outranks any subtype trigger the same case also fired"] },
+    { "dot": "emerald", "title": "Every case ends in exactly one state", "items": ["Falling straight through a branch is the \"no\" answer; every branch that leaves the rail is labelled yes", "Two states close with no operator; four leave the automated path", "ABSTAINED is the fallthrough reached on evidence, not by accident"] }
+  ]
+}

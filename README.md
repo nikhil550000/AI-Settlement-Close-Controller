@@ -1,87 +1,115 @@
+<div align="center">
+
 # AI Settlement Close Controller
 
-Razorpay AI Buildathon 2026, Track 4 (AI Finance Controller). Solo build. `spec.md` is the single source of truth — every claim below traces to a section of it, and every number is read off a committed artifact, not typed from memory.
+**An exception-resolution layer for settlement accounting — where the model reads, and deterministic code posts.**
 
-## The one-paragraph version
+Razorpay AI Buildathon 2026 · Track 4 (AI Finance Controller) · solo build
 
-An agent that ingests a merchant's accounting-ledger export, Razorpay Settlement Reconciliation data, and the merchant's bank statement, and closes the settlement accounting loop across a 150-case batch. **80 of 150 cases close fully automatically — 100% of the population ground truth marks automatable — with `false_match_rate` 0/150 and `auto_close_precision` 50/50.** The remaining 70 are categorized, evidenced, and handed to a human with the external action named. Everything that reaches the ledger is computed by deterministic code; the model is used in exactly the places where a deterministic answer does not exist, and the repository measures what it is worth in both directions.
+[![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![tests](https://img.shields.io/badge/tests-611%20passed-1e8e5a)](tests/)
+[![false_match_rate](https://img.shields.io/badge/false__match__rate-0%2F150-1e8e5a)](#measured-not-tuned)
+[![auto_close_precision](https://img.shields.io/badge/auto__close__precision-50%2F50-1e8e5a)](#measured-not-tuned)
+[![reproduces offline](https://img.shields.io/badge/reproduces-offline%2C%20no%20API%20key-2b5fd9)](#quickstart--reproduce-path)
+
+</div>
+
+---
+
+> **80 of 150 cases close fully automatically** — 100% of the population ground truth marks automatable — with `false_match_rate` **0/150** and `auto_close_precision` **50/50**. The remaining 70 are categorized, evidenced, and handed to a human with the external action named.
+
+An agent that ingests a merchant's accounting-ledger export, Razorpay Settlement Reconciliation data, and the merchant's bank statement, and closes the settlement accounting loop across a 150-case batch. Everything that reaches the ledger is computed by deterministic code; the model is used in exactly the places where a deterministic answer does not exist, and the repository measures what it is worth **in both directions**.
+
+`spec.md` is the single source of truth — every claim below traces to a section of it, and every number is read off a committed artifact, not typed from memory.
+
+| Closes the loop | Proves the model's worth | Reproduces byte-for-byte |
+|---|---|---|
+| 150 cases, 80 of them automatically, at `false_match_rate` 0/150 | Three ablations — two of which say the model earns nothing here | A real clean clone with no API key produces an identical `metrics.json` |
+
+---
+
+## Contents
+
+| | |
+|---|---|
+| [What this is](#what-this-is) · [The shape of the system](#the-shape-of-the-system) · [How one case reaches its state](#how-one-case-reaches-its-state) | the build |
+| [Where the model may act](#where-the-model-is-allowed-to-act-exactly) · [Result 1: vocabulary](#result-1-where-the-model-earns-its-place-and-where-it-does-not) · [Result 2: judgment](#result-2-judgment-on-the-money-path-and-the-gate-it-needs) | the evidence |
+| [Quickstart](#quickstart--reproduce-path) · [Metrics](#metrics-and-evaluation) · [Bank-line accounting](#bank-line-accounting-the-one-figure-denominated-in-source-records) | running it |
+| [Non-goals](#non-goals) · [Required disclosures](#required-disclosures) · [Known limitations](#known-limitations) | the caveats |
+
+---
 
 ## What this is
 
 For each reconciliation case, the Controller:
 
-1. Matches high-confidence records across the three sources (FR-09's four-tier cascade).
-2. Detects accounting discrepancies — unposted refunds, fee/GST mismatches, chargeback lifecycle events, settlement holds, timing differences — and derives a correcting journal entry from a **fixed allowlist of six templates** (§3.4), never an invented account or amount (invariant 1.7.2).
-3. Validates every candidate against the full §1.7.5 chain (balance, allowlist membership, evidence, idempotency, zero post-adjustment residual) before it is allowed to post.
-4. Applies validated corrections to a synthetic ledger and re-reconciles to confirm the discrepancy actually closed.
-5. Categorizes operational exceptions it cannot resolve itself and names the external action required.
-6. Abstains, explicitly, when evidence does not justify an automated decision — abstention is a designed outcome (§1.3), not a failure.
+1. **Matches** high-confidence records across the three sources (FR-09's four-tier cascade).
+2. **Detects** accounting discrepancies — unposted refunds, fee/GST mismatches, chargeback lifecycle events, settlement holds, timing differences — and derives a correcting journal entry from a **fixed allowlist of six templates** (§3.4), never an invented account or amount (invariant 1.7.2).
+3. **Validates** every candidate against the full §1.7.5 chain (balance, allowlist membership, evidence, idempotency, zero post-adjustment residual) before it is allowed to post.
+4. **Applies** validated corrections to a synthetic ledger and **re-reconciles** to confirm the discrepancy actually closed.
+5. **Categorizes** operational exceptions it cannot resolve itself and names the external action required.
+6. **Abstains**, explicitly, when evidence does not justify an automated decision — abstention is a designed outcome (§1.3), not a failure.
 
 Every case terminates in exactly one of five states: `AUTO_MATCHED`, `AUTO_CLOSED`, `EXTERNAL_ACTION_REQUIRED`, `REVIEW_REQUIRED`, `ABSTAINED` (§1.3).
 
-### The shape of the system
+---
 
-Ten components (§4.1), one direction of data flow, no cycles. Two things the component table further down cannot show: the generator reaches the pipeline **only through disk** (§4.1's import guard makes any other channel a test failure), and **component S is not a stage** — it is a dependency components 2, 3, 4, 5 and 8 each take, threaded as a `semantics=` parameter, which is why it hangs off the spine rather than sitting on it.
+## The shape of the system
 
-```mermaid
-flowchart TB
-    G["<b>generator/</b><br/>seeded synthetic batch<br/>+ ground_truth.jsonl"]
-    SRC["<b>four canonical schemas</b> · §3.1<br/>settlements · recon_lines<br/>ledger_entries · raw bank export"]
-    C1["<b>1 · Adapters</b> + loaders<br/>FR-08 declarative column map → bank_line"]
+Ten components (§4.1), one direction of data flow, no cycles.
 
-    subgraph spine ["pipeline/run.py · run_batch — components 2 → 8"]
-        direction TB
-        C2["<b>2 · Case assembly</b><br/>settlement-anchored + orphan cases"]
-        C3["<b>3 · Matcher</b><br/>FR-09 four-tier cascade · T+2 window<br/>integer-paise residual · tier-2 contention"]
-        C4["<b>4 · Predicates</b><br/>six §3.4 evidence tests, mutually exclusive"]
-        C5["<b>5 · Classifier</b><br/>exception class + subtype · Slot A"]
-        C6["<b>6 · Instantiator</b><br/>template → candidate JV, amount derived"]
-        C7["<b>7 · Validator</b><br/>the §1.7.5 chain — every check must pass"]
-        C8["<b>8 · Apply + re-reconcile</b><br/>idempotent write · residual recheck"]
-    end
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/architecture.dark.png">
+  <img alt="Component map: a batch on disk enters the adapters, flows through case assembly, the matcher, the predicates, the classifier, the instantiator, the validator and apply, then reaches the SQLite ledger and the reporter. Semantics hangs off the spine as a dependency of components 2, 3, 4, 5 and 8, fed by committed prompt caches. Ground truth reaches the reporter only." src="assets/diagrams/architecture.light.png" width="100%">
+</picture>
 
-    TERM["<b>terminal state</b> · §1.3 — exactly one per case<br/>AUTO_MATCHED · AUTO_CLOSED · ABSTAINED<br/>EXTERNAL_ACTION_REQUIRED · REVIEW_REQUIRED"]
-    GT["<b>ground_truth.jsonl</b><br/><i>evaluation-only — never fed to the pipeline</i>"]
-    C9["<b>9 · Reporter</b><br/>§1.6 metric surface · §5.2 matrices<br/>five §1.8 artifacts + bank-line<br/>accounting → one HTML file"]
-    SEM["<b>S · Semantics</b><br/>six free-text reads — five routing,<br/>one on the money path<br/><i>KeywordSemantics ⇄ LlmSemantics</i>"]
-    ACCT["<b>bank-line accounting</b><br/>every bank line in exactly one disposition<br/><i>denominated in source records, not cases —<br/>the unaccounted bucket must always be empty</i>"]
+<sub>**Green** a deterministic pipeline stage · **amber** a model-touching arm, separately switchable and separately measured · **red** the validator, the only gate into the ledger · **purple** stored state · **teal** the reported output · **grey** the data boundary. Dashed edges are dependencies, not data flow.<br>Detail is small at README width — open full size: <a href="assets/diagrams/architecture.light.png">light</a> · <a href="assets/diagrams/architecture.dark.png">dark</a></sub>
 
-    G -.->|"disk is the only channel<br/>§4.1 import guard"| SRC
-    SRC --> C1
-    C1 --> C2
-    C2 --> C3
-    C3 --> C4
-    C4 --> C5
-    C5 --> C6
-    C6 --> C7
-    C7 --> C8
-    C8 --> TERM
-    TERM --> C9
-    GT --> C9
-    C8 --> ACCT
-    SRC -.->|"the raw statement"| ACCT
-    ACCT --> C9
+Two things the component table below cannot show, and the picture can:
 
-    SEM -.-> C2
-    SEM -.-> C3
-    SEM -.-> C4
-    SEM -.-> C5
-    SEM -.-> C8
+- **The generator never appears on the spine.** The pipeline's entry point is a *batch on disk* — the generator reaches it through no other channel, and §4.1's import guard makes any other channel a test failure (`tests/test_import_guard.py`).
+- **Component S is not a stage.** It is a dependency components 2, 3, 4, 5 and 8 each take, threaded as a `semantics=` parameter from `run_batch` down — which is why it hangs off the spine rather than sitting on it.
 
-    classDef det fill:#eef4ff,stroke:#2b5fd9,stroke-width:1px,color:#1b1f24
-    classDef model fill:#fff4e0,stroke:#b8720a,stroke-width:2px,color:#1b1f24
-    classDef data fill:#f4f5f7,stroke:#9aa3b0,stroke-width:1px,color:#1b1f24
-    classDef state fill:#eaf7f0,stroke:#1e8e5a,stroke-width:2px,color:#1b1f24
+| # | Component | Job | Module |
+|---|---|---|---|
+| G | Generator | Emits reference / held-out / scale batches plus ground truth from a seed | `generator/` |
+| S | Semantics | The six free-text reads over bank and adjustment prose, behind one interface with a keyword arm and an LLM arm | `pipeline/semantics.py` |
+| 1 | Adapters | FR-08 declarative column mapping → canonical `bank_line`; profile *inference* for an unseen bank | `pipeline/adapters/`, `pipeline/loaders.py` |
+| 2 | Case assembly | Recon lines grouped by `settlement_id` → settlement-anchored cases; residual bank lines → orphan cases | `pipeline/case_assembly.py` |
+| 3 | Matcher | FR-09 four-tier cascade, T+2 window, integer-paise residual, cross-settlement tier-2 contention | `pipeline/matcher.py` |
+| 4 | Predicates | The six §3.4 evidence predicates plus the `OPERATIONAL_EXCEPTION` subtype triggers | `pipeline/predicates.py` |
+| 5 | Classifier | Exception class and subtype assignment (Slot A) | `pipeline/classifier.py` |
+| 6 | Instantiator | Template → candidate JV; deterministic amount derivation | `pipeline/instantiator.py` |
+| 7 | Validator | The invariant 1.7.5 chain plus both §3.4 validation layers | `pipeline/validator.py` |
+| 8 | Apply + re-reconcile | Ledger write under 1.7.4's idempotency constraint, residual recheck, terminal state | `pipeline/apply.py` |
+| 9 | Reporter | Metric surface, §5.2 matrices, five §1.8 artifacts, single-file HTML | `pipeline/metrics.py`, `pipeline/report.py` |
+| A | Bank-line accounting | Every bank line in exactly one disposition — denominated in source records rather than cases | `pipeline/bank_accounting.py` |
 
-    class C1,C2,C3,C4,C6,C7,C8,C9,ACCT det
-    class SEM,C5 model
-    class G,SRC,GT data
-    class TERM state
-```
+**Components 4 and 6–8 are the invariant-bearing core.** A predicate overlap, a wrong amount derivation, a validator that passes when it shouldn't, or a non-idempotent apply are all undetectable from output alone — which is why the review findings and the Phase 4 "no cut" rule all concentrate there.
 
-<sub>**Blue** deterministic · **amber** has a model-touching arm, each separately switchable and separately measured · **grey** data · dotted edges are dependencies, not data flow.</sub>
+---
 
-### Where the model is allowed to act, exactly
+## How one case reaches its state
+
+`pipeline.apply.assign_state` is six branches, and **the order of the branches is the precedence** — which is the part prose renders badly and a picture renders exactly.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/states.dark.png">
+  <img alt="Decision cascade: a case is tested for a policy exclusion, then a landed correction, then a failed candidate, then a fired trigger, then a zero residual. Policy exclusion routes to REVIEW_REQUIRED with reason policy; a landed correction to AUTO_CLOSED; a failed candidate to REVIEW_REQUIRED with reason confidence; a fired trigger to EXTERNAL_ACTION; a zero residual to AUTO_MATCHED; and anything left falls through to ABSTAINED." src="assets/diagrams/states.light.png" width="100%">
+</picture>
+
+<sub>Open full size: <a href="assets/diagrams/states.light.png">light</a> · <a href="assets/diagrams/states.dark.png">dark</a></sub>
+
+Two orderings in particular are load-bearing:
+
+- **A policy exclusion is evaluated before anything else** — "regardless of model confidence" (§2.5), and regardless of the fact that the entry would have validated.
+- **A correction that landed outranks any subtype trigger the same case also fired**, because §3.3 defines `OPERATIONAL_EXCEPTION` as a discrepancy no journal entry can resolve.
+
+Falling straight through a branch is the "no" answer; every branch that leaves the rail is labelled `yes`. `ABSTAINED` is branch 6, the fallthrough §2.3 calls for — reached on evidence, not by accident.
+
+---
+
+## Where the model is allowed to act, exactly
 
 Invariant 1.7.2: the model may *classify* and may *write prose*; it may never originate an account, an amount, or a narration on the automated path. Everything that reaches the ledger — which account, which amount, which template — is computed by deterministic code the model never touches. There are five model-touching surfaces, and each is separately switchable and separately measured:
 
@@ -93,54 +121,20 @@ Invariant 1.7.2: the model may *classify* and may *write prose*; it may never or
 | **Contested-credit resolution** — the money-path read | `pipeline/semantics.py` | which of two settlements a contested credit pays, or `null` | yes — `false_match_rate` is the referee |
 | **Adapter inference** — the agentic loop | `pipeline/adapters/inference.py` | a proposed YAML column map for a bank with no hand-written profile | yes — nine deterministic checks accept or reject it |
 
-Drawn, because this is the invariant the whole build rests on — five model surfaces, every one of them routed through deterministic code that already existed, and three things with no path to the ledger at all:
+Drawn, because this is the invariant the whole build rests on — five model surfaces, every one of them routed through deterministic code that already existed:
 
-```mermaid
-flowchart LR
-    M1["<b>Semantics</b> · five routing reads<br/><i>returns a bool, or a name lifted<br/>verbatim from the bank's own text</i>"]
-    M4["<b>Contested credit</b> · which settlement<br/><i>the one read that can misroute money</i>"]
-    M5["<b>Adapter inference</b> · a column map<br/><i>propose → verify → repair, budget 3</i>"]
-    M2["<b>Slot A</b> · subtype label<br/><i>one of eight enum values</i>"]
-    M3["<b>Slot B</b> · reviewer prose<br/><i>badged model-generated</i>"]
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/permissions.dark.png">
+  <img alt="Five model-answered surfaces across the top: Semantics, contested credit, Slot A, adapter inference and Slot B. Each routes down into a deterministic gate: a substring check, the grounding gate, nine deterministic checks. The substring check, the grounding gate and Slot A all feed the 1.7.5 validator chain, which is the only path into the ledger. Slot B bypasses the gates entirely and reaches only the report." src="assets/diagrams/permissions.light.png" width="100%">
+</picture>
 
-    V1["substring check<br/><i>the name must appear in the line</i>"]
-    V4["<b>the grounding gate</b><br/><i>the winning settlement's own payment<br/>method must appear as a word</i>"]
-    V5["nine checks, incl. balance_continuity<br/><i>Δbalance == deposit − withdrawal, in paise</i>"]
-    V7["<b>the §1.7.5 validator chain</b><br/><i>balanced · allowlisted · evidenced<br/>idempotent · zero post-adjustment residual</i>"]
-
-    N1["originate an account"]
-    N2["originate an amount"]
-    N3["originate a posted narration"]
-
-    LEDGER["<b>the ledger</b><br/>CONTROLLER_ADJUSTMENT rows"]
-    REPORT["<b>the report</b><br/><i>read by a human</i>"]
-
-    M1 --> V1
-    M4 --> V4
-    M5 --> V5
-    M2 --> V7
-    V1 --> V7
-    V4 --> V7
-    V7 ==>|"only path in"| LEDGER
-    M3 -.->|"off the money path"| REPORT
-    N1 x--x LEDGER
-    N2 x--x LEDGER
-    N3 x--x LEDGER
-
-    classDef modelbox fill:#fff4e0,stroke:#b8720a,stroke-width:2px,color:#1b1f24
-    classDef gatebox fill:#eef4ff,stroke:#2b5fd9,stroke-width:2px,color:#1b1f24
-    classDef forbidden fill:#fdeeec,stroke:#c0392b,stroke-width:2px,color:#1b1f24,stroke-dasharray: 4 3
-    classDef out fill:#eaf7f0,stroke:#1e8e5a,stroke-width:3px,color:#1b1f24
-
-    class M1,M2,M3,M4,M5 modelbox
-    class V1,V4,V5,V7 gatebox
-    class N1,N2,N3 forbidden
-    class LEDGER,REPORT out
-```
+<sub>**Amber** a model-answered surface · **red** the deterministic gate it must pass · **purple** the ledger · **teal** the human-read output. Nothing reaches the ledger except through the 1.7.5 chain, and no arrow carries an account, an amount, or a posted narration.<br>Open full size: <a href="assets/diagrams/permissions.light.png">light</a> · <a href="assets/diagrams/permissions.dark.png">dark</a></sub>
 
 The semantics surface returns only a `bool` or a counterparty name **lifted verbatim out of text the bank wrote** (verified as a substring before it is trusted). Its answers route cases; they never price one. `LlmSemantics` could return adversarial nonsense on every call without producing a wrong journal entry — it would produce wrong routing, which the §1.6 metric surface measures and the §1.7.5 validator chain still gates.
 
-## The headline result: where the model earns its place, and where it does not
+---
+
+## Result 1: where the model earns its place, and where it does not
 
 The reference batch grades **1.0000 on everything** with no model involved. That is not a result — it is a finding about the batch, and chasing it down is the most useful thing this build did.
 
@@ -164,7 +158,9 @@ uv run reconcile --semantics keyword --data-dir data/heldout_vocab   # raises, b
 
 The LLM row is also a committed artifact — `data/heldout_vocab/metrics.json` and `report.html`, pinned the same way FR-13 pins the reference run — so a reviewer who never runs the code still sees it. And `tests/test_heldout_vocabulary.py` pins **both** rows, asserting the failure as hard as the success: if someone later widens `GATEWAY_MARKER` to cover `RZRPAY`, the keyword arm starts completing this batch, that test goes red, and the ablation has to be re-measured rather than silently becoming a comparison of two arms that now agree. It also asserts `LlmSemantics.misses == 0`, so the headline number cannot be produced by a run that quietly fell back to keywords, and that `ground_truth.jsonl` is byte-identical to the reference batch's, so the comparison stays fair.
 
-## The second result: judgment on the money path, and the gate it needs
+---
+
+## Result 2: judgment on the money path, and the gate it needs
 
 The vocabulary ablation above is about *robustness* — the model reading words the rules were not written for. This one is about *judgment*, and it is the only place in the build where the model can change a money outcome.
 
@@ -194,22 +190,7 @@ The fix is not a better prompt. It is to stop trusting the answer and check the 
 
 That is this repository's answer to the track's *"verification capacity, not generation speed, is the bottleneck"* — not quoted, measured. `tests/test_contested.py` pins both arms, including that the model arm is strictly additive and costs no false match.
 
-## Non-goals
-
-Explicitly out of scope (§2.10):
-
-- Not a general reconciliation or rules-based bookkeeping product — Razorpay already ships those (Settlement Reconciliation API, Razorpay Recon, the Bookkeeping Agent). This build is the exception-resolution layer *above* predefined rules: the cases where merchant ledger, settlement data, and bank statement disagree in ways a rule can't resolve.
-- No web server, SPA, database UI, authentication, or live dashboard. The CLI is the product (FR-10); the report is one static HTML file (FR-11).
-- No real merchant data, anywhere. Every record comes from one seeded synthetic generator (`generator/`), which the graded pipeline (`pipeline/`) is structurally forbidden from importing (§4.1's import guard, `tests/test_import_guard.py`).
-- No FR-05 (recognition-entry proposals on `EXTERNAL_ACTION_REQUIRED` cases) in v1 — §2.4's stated fallback, unbuilt by design.
-
-## Required disclosures
-
-Two facts the spec requires stated everywhere the numbers below are shown — here, in the FR-11 report header, and in the pitch video (§3.5, §5.3):
-
-> **Synthetic evaluation.** Ground-truth labels and the records being graded come from one generator. The evaluation measures whether the pipeline recovers the injected intent; it does not establish that the injected intent resembles a real merchant's books.
-
-> **Anomaly enrichment.** `match_rate` on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility — only 30 of 150 cases (20%) require no action at all, against a real-world break rate closer to low single digits, roughly an order of magnitude enrichment. `EXTERNAL_ACTION_REQUIRED` runs high because orphan cases are unresolvable by construction (§3.6) and are the majority of that state's population: 36 of 150 cases (24.0%) are ground-truth `EXTERNAL_ACTION_REQUIRED`.
+---
 
 ## Quickstart / reproduce path
 
@@ -239,6 +220,8 @@ uv run python tools/infer_bank_profile.py data/unseen_bank/kotak_statement.csv
 uv run pytest                                               # 611 passed, 1 skipped
 ```
 
+---
+
 ## The agentic surface: bank-profile inference
 
 FR-08's adapter reads a bank export through a declarative YAML column map. Three are hand-written (`hdfc`, `icici`, `axis`). For a bank with no profile, `pipeline/adapters/inference.py` runs a bounded **propose → verify → repair** loop:
@@ -254,6 +237,8 @@ Every iteration is judged by deterministic code that already existed, which is w
 
 **A measured negative, kept as a test.** `data/unseen_bank/yesbank_statement.csv` has one `Amount (INR)` column plus a separate `Dr/Cr` flag. FR-08's profile schema has two money columns and no direction flag, so **no column map can express this file**. The model read the date shape correctly, `direction_coherent` rejected the mapping, the repair prompt did not converge across attempts 2 and 3 because there is nothing to converge to, and the loop gave up cleanly at the budget with no profile written. That is a schema limitation, not a model failure, and it is reported as one.
 
+---
+
 ## Batch and datasets
 
 | dataset | what it is |
@@ -267,36 +252,20 @@ Every iteration is judged by deterministic code that already existed, which is w
 
 Ground truth is emitted from the injection plan when each case is planted, never re-derived by inspecting the generated records (§3.5) — re-deriving would embed the pipeline's own matching logic into its answer key.
 
+---
+
 ## Metrics and evaluation
 
 The full §1.6 metric surface is computed against ground truth in `pipeline/metrics.py`. Every rate carries its own integer numerator and denominator (never a bare float), and an undefined metric reports as `undefined`, never as `0.0`. A macro average is a `MacroRate`, not a `Rate` — a mean of ratios is not a ratio, and expressing it as one produced a committed artifact that read `{"numerator": 7, "denominator": 7, "value": 0.80}`. Two §5.2 confusion matrices, a per-subtype breakdown, and the §5.5 threshold review are in `pipeline/eval_report.py`; all five §1.8 artifacts render into one self-contained HTML file (`pipeline/report.py`, FR-11), alongside a sixth section §1.8 does not ask for — see **bank-line accounting** below.
 
-### Bank-line accounting: the one figure denominated in source records
+### Measured, not tuned
 
-Every §1.6 metric is denominated in **cases**. That is the right unit for grading, and it has one blind spot: a bank line that reaches no case is invisible to all of them. `data/contested/` shipped that way — Rs 12,693.20 of real bank credit in no case, no metric and no report. Four credits narrate the gateway, so `assemble_orphan_cases` never considered them; FR-09 tier-2 demotion then dropped them from every settlement that had claimed them. Every individual decision was correct and safe. The batch simply stopped adding up, and **no test could see it**, because there was no metric in the unit the loss occurred in.
-
-`pipeline/bank_accounting.py` closes that. It is not a §1.6 metric and grades nothing against ground truth — it is a **partition proof**. Every bank line lands in exactly one disposition, and `unaccounted` is the bucket that must always be empty:
-
-| disposition | reference batch | what it means |
-|---|---|---|
-| `settlement_evidence` | 98 lines, Rs 20,68,915.10 | matched to a settlement by FR-09's cascade |
-| `orphan_evidence` | 28 lines, Rs 37,634.69 | evidence on an orphan case (§1.2, §3.6) |
-| `contested_unawarded` | 0 | claimed by 2+ settlements at tier 2, awarded to none (§4.6) |
-| `bank_charge` | 20 lines | §3.6: bank charges stay noise, not cases |
-| `self_matched_reversal` | 12 lines, Rs 6,724.03 | a credit and its own reversal netting to a wash (REV-18) |
-| `outbound_noise` | 18 lines | an ordinary debit to an unrelated party |
-| **`unaccounted`** | **0** | **reachable by no rule — a defect, and the assertion that matters** |
-
-176 lines in, 176 placed. It renders as section 6 of the FR-11 report, ships in `metrics.json`, and `tests/test_bank_accounting.py` asserts the partition is total on all four committed batches. The dispositions are read off the pipeline's own decisions — `is_reversal_shaped`, `find_self_matching_reversal_pairs` and the semantics surface are imported from the modules that made the call, never re-derived, because a drifted second copy would report a clean partition over a batch that no longer has one.
-
-**What it is honest about.** It does not resolve a contested credit; it makes one impossible to lose. A non-zero `contested_unawarded` is the correct outcome of genuinely ambiguous evidence, not a bug — but it is now a rupee figure a reviewer can act on rather than an absence nobody can see.
-
-**Measured at seed 0, the shipped arms (`--semantics keyword --classifier baseline`), nothing tuned in response to it:**
+Seed 0, the shipped arms (`--semantics keyword --classifier baseline`), nothing tuned in response to it:
 
 | Metric | Value | §5.5 target |
 |---|---|---|
-| `false_match_rate` | 0/150 = 0.0000 | 0 |
-| `auto_close_precision` | 50/50 = 1.0000 | ≥ 0.98 |
+| `false_match_rate` | **0/150 = 0.0000** | 0 |
+| `auto_close_precision` | **50/50 = 1.0000** | ≥ 0.98 |
 | `auto_match_precision` | 30/30 = 1.0000 | ≥ 0.95 |
 | `auto_close_recall` | 50/50 = 1.0000 | 0.80 – 0.95 |
 | `auto_match_recall` | 30/30 = 1.0000 | 0.85 – 0.95 |
@@ -311,7 +280,9 @@ Every §1.6 metric is denominated in **cases**. That is the right unit for gradi
 
 **The benchmark is saturated, and that is a finding about the batch.** The keyword arm scores 1.0000 on state accuracy and both macro subtype metrics at seeds 0, 1, 2, 5, 7 and 11, and the adversarial set is 10/10. This generator plants *structurally unambiguous* anomalies — each family produces a distinct arithmetic signature, and REV-16 made the six template predicates mutually exclusive by construction, so evidence → label is a bijection with no irreducible ambiguity for judgment to resolve. A perfect score on a task where perfection is arithmetic proves as little as one cherry-picked match. `data/heldout_vocab/` is the batch built to say something the reference batch cannot.
 
-**§5.4 ablation — the Slot A classifier arms, `exception_subtype` macro, seed 0, reference batch:**
+### §5.4 ablation — the Slot A classifier arms
+
+`exception_subtype` macro, seed 0, reference batch:
 
 | arm | macro precision | macro recall | state accuracy | LLM calls |
 |---|---|---|---|---|
@@ -331,13 +302,63 @@ Note the contrast with the semantics ablation above, which is the actual lesson:
 
 **Performance (FR-02, NFR-02, NFR-03), on `Windows AMD64, Intel64 Family 6 Model 154 Stepping 4, Python 3.11.15`, three runs each:** reference batch (150 cases, 7,111 raw records) 685–795 cases/s; scale batch (seed 3, 362 cases, 19,355 raw records) 368–383 cases/s. Re-measured after the `semantics` refactor — the indirection cost nothing, and both figures came in above the pre-refactor measurement (605–656 and 299–310), which is machine variance rather than an optimisation and is reported as the current range rather than the better one. Reproduce with `uv run python tools/measure_performance.py`.
 
+---
+
+## Bank-line accounting: the one figure denominated in source records
+
+Every §1.6 metric is denominated in **cases**. That is the right unit for grading, and it has one blind spot: a bank line that reaches no case is invisible to all of them. `data/contested/` shipped that way — Rs 12,693.20 of real bank credit in no case, no metric and no report. Four credits narrate the gateway, so `assemble_orphan_cases` never considered them; FR-09 tier-2 demotion then dropped them from every settlement that had claimed them. Every individual decision was correct and safe. The batch simply stopped adding up, and **no test could see it**, because there was no metric in the unit the loss occurred in.
+
+`pipeline/bank_accounting.py` closes that. It is not a §1.6 metric and grades nothing against ground truth — it is a **partition proof**. Every bank line lands in exactly one disposition, and `unaccounted` is the bucket that must always be empty:
+
+| disposition | reference batch | what it means |
+|---|---|---|
+| `settlement_evidence` | 98 lines, Rs 20,68,915.10 | matched to a settlement by FR-09's cascade |
+| `orphan_evidence` | 28 lines, Rs 37,634.69 | evidence on an orphan case (§1.2, §3.6) |
+| `contested_unawarded` | 0 | claimed by 2+ settlements at tier 2, awarded to none (§4.6) |
+| `bank_charge` | 20 lines | §3.6: bank charges stay noise, not cases |
+| `self_matched_reversal` | 12 lines, Rs 6,724.03 | a credit and its own reversal netting to a wash (REV-18) |
+| `outbound_noise` | 18 lines | an ordinary debit to an unrelated party |
+| **`unaccounted`** | **0** | **reachable by no rule — a defect, and the assertion that matters** |
+
+176 lines in, 176 placed. It renders as section 6 of the FR-11 report, ships in `metrics.json`, and `tests/test_bank_accounting.py` asserts the partition is total on all four committed batches. The dispositions are read off the pipeline's own decisions — `is_reversal_shaped`, `find_self_matching_reversal_pairs` and the semantics surface are imported from the modules that made the call, never re-derived, because a drifted second copy would report a clean partition over a batch that no longer has one.
+
+**What it is honest about.** It does not resolve a contested credit; it makes one impossible to lose. A non-zero `contested_unawarded` is the correct outcome of genuinely ambiguous evidence, not a bug — but it is now a rupee figure a reviewer can act on rather than an absence nobody can see.
+
+---
+
+## Non-goals
+
+Explicitly out of scope (§2.10):
+
+- Not a general reconciliation or rules-based bookkeeping product — Razorpay already ships those (Settlement Reconciliation API, Razorpay Recon, the Bookkeeping Agent). This build is the exception-resolution layer *above* predefined rules: the cases where merchant ledger, settlement data, and bank statement disagree in ways a rule can't resolve.
+- No web server, SPA, database UI, authentication, or live dashboard. The CLI is the product (FR-10); the report is one static HTML file (FR-11).
+- No real merchant data, anywhere. Every record comes from one seeded synthetic generator (`generator/`), which the graded pipeline (`pipeline/`) is structurally forbidden from importing (§4.1's import guard, `tests/test_import_guard.py`).
+- No FR-05 (recognition-entry proposals on `EXTERNAL_ACTION_REQUIRED` cases) in v1 — §2.4's stated fallback, unbuilt by design.
+
+---
+
+## Required disclosures
+
+Two facts the spec requires stated everywhere the numbers above are shown — here, in the FR-11 report header, and in the pitch video (§3.5, §5.3):
+
+> **Synthetic evaluation.** Ground-truth labels and the records being graded come from one generator. The evaluation measures whether the pipeline recovers the injected intent; it does not establish that the injected intent resembles a real merchant's books.
+
+> **Anomaly enrichment.** `match_rate` on this batch is not comparable to any industry figure. The batch is deliberately anomaly-enriched for metric legibility — only 30 of 150 cases (20%) require no action at all, against a real-world break rate closer to low single digits, roughly an order of magnitude enrichment. `EXTERNAL_ACTION_REQUIRED` runs high because orphan cases are unresolvable by construction (§3.6) and are the majority of that state's population: 36 of 150 cases (24.0%) are ground-truth `EXTERNAL_ACTION_REQUIRED`.
+
+---
+
 ## What broke, and how it was recovered
 
 `FAILURES.md` is the record: ten incidents with what broke, how it was found, the root cause, and the guard that stops it recurring — including a `UNIQUE` constraint that made `AUTO_CLOSED` unreachable for all 50 cases, nine ground-truth labels no component could ever reach, the adversarial review that found this repository shipping, pinning and documenting the arm that measures worst, and **Rs 12,693.20 of bank credit that went missing without moving a single metric**, because every rate in §1.6 is denominated in cases and the loss happened in source records.
 
+---
+
 ## Repository layout
 
 Root holds four documents and nothing else, in the order a reader needs them: what I said I would build, what I built, how it is put together, and what broke. The two working documents that drove the build — the standing brief and the session log — are evidence rather than reading material, so they sit in `docs/`.
+
+<details>
+<summary><b>Full tree</b></summary>
 
 ```
 AI Settlement Close Controller/
@@ -345,6 +366,8 @@ AI Settlement Close Controller/
 ├── README.md                   # what I built, and what it measures
 ├── ARCHITECTURE.md             # how it's put together — component-level design notes
 ├── FAILURES.md                 # what broke and how it was recovered
+├── assets/diagrams/            # the README's diagrams: rendered PNGs (light + dark)
+│                               #   beside the Archify specs they are generated from
 ├── docs/
 │   ├── AGENT.md                #   standing brief every coding session opens with (§6.1)
 │   └── BUILDLOG.md             #   append-only, one entry per session (Built/Broke/Cut/Decided/Next) (§6.2)
@@ -381,6 +404,10 @@ AI Settlement Close Controller/
     └── report.html             # a sample FR-11 report from a real run (FR-12)
 ```
 
+</details>
+
+---
+
 ## Known limitations
 
 - **Both ablation batches were designed by the author knowing where the deterministic path would break.** The keyword lists and the FR-09 cascade both predate them, so neither is tuned-to-fail — but the *axes* (vocabulary drift, amount collision) were chosen deliberately. They demonstrate that the mechanisms are real; they do not establish how often either occurs in a real merchant's bank feed.
@@ -396,3 +423,9 @@ AI Settlement Close Controller/
 - **Orphan cases are unresolvable by construction (§3.6)** and cannot reach `AUTO_MATCHED` or `AUTO_CLOSED`; they are the majority of `EXTERNAL_ACTION_REQUIRED`'s population.
 - **The reconciled-ledger diff shows only `CONTROLLER_ADJUSTMENT` rows**, not the full ~5,800-row ledger — a deliberate reading of FR-11's "diff," not a truncation.
 - **The §5.5 thresholds remain provisional**, as the spec states. `abstention_rate` reads below the 8–18% band on the Slot A arm (0.0667 against the shipped arm's 0.1133): Slot A's eight-value output space has no "insufficient evidence" option, so a forced choice becomes a confident one.
+
+---
+
+<div align="center">
+<sub><b>spec.md</b> — what I said I'd build · <b>ARCHITECTURE.md</b> — how it's put together · <b>FAILURES.md</b> — what broke and how it was recovered</sub>
+</div>

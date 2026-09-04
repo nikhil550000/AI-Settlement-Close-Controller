@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "AI Settlement Close Controller",
+    "quality_profile": "showcase",
+    "viewBox": [1370, 600],
+    "repository": {
+      "url": "https://github.com/nikhil550000/AI-Settlement-Close-Controller",
+      "revision": "a138d5707562452e09d903adf0764afe564eb3cb"
+    },
+    "views": [
+      { "id": "money-path", "label": "The money path", "focus": ["sources", "adapters", "assembly", "matcher", "predicates", "instantiator", "validator", "apply", "ledger"], "note": "Every stage that can move a rupee, from raw statement to posted journal entry." },
+      { "id": "model-surfaces", "label": "Model-touching arms", "focus": ["semantics", "classifier", "caches"], "note": "The two swappable arms, and the committed cache that keeps them off the network." },
+      { "id": "grading", "label": "How it is graded", "focus": ["groundtruth", "apply", "ledger", "reporter"], "note": "Ground truth reaches the reporter only, never the pipeline." }
+    ]
+  },
+  "components": [
+    { "id": "sources", "type": "external", "label": "Batch on disk", "sublabel": "four canonical schemas", "tag": "seeded generator output", "pos": [45, 40], "size": [165, 88], "sources": [{ "path": "pipeline/schemas.py" }, { "path": "pipeline/loaders.py" }] },
+    { "id": "adapters", "type": "backend", "label": "1 · Adapters", "sublabel": "declarative column map", "tag": "FR-08 · unseen-bank inference", "pos": [300, 40], "size": [165, 88], "sources": [{ "path": "pipeline/adapters/bank_adapter.py" }, { "path": "pipeline/adapters/inference.py" }] },
+    { "id": "assembly", "type": "backend", "label": "2 · Case assembly", "sublabel": "anchored + orphan cases", "pos": [555, 40], "size": [165, 88], "sources": [{ "path": "pipeline/case_assembly.py" }] },
+    { "id": "matcher", "type": "backend", "label": "3 · Matcher", "sublabel": "four-tier · T+2 window", "tag": "integer-paise residual", "pos": [810, 40], "size": [165, 88], "sources": [{ "path": "pipeline/matcher.py" }] },
+    { "id": "predicates", "type": "backend", "label": "4 · Predicates", "sublabel": "six exclusive tests", "pos": [1065, 40], "size": [165, 88], "sources": [{ "path": "pipeline/predicates.py" }] },
+
+    { "id": "semantics", "type": "cloud", "label": "S · Semantics", "sublabel": "six free-text reads — keyword or LLM arm", "tag": "a dependency, not a stage", "pos": [300, 185], "size": [420, 96], "sources": [{ "path": "pipeline/semantics.py", "line": 162, "label": "NarrationSemantics" }] },
+    { "id": "caches", "type": "database", "label": "Prompt caches", "sublabel": "SHA-256 keyed, committed", "tag": "STRICT: no network path", "pos": [1065, 185], "size": [165, 96], "sources": [{ "path": "pipeline/llm_cache.py" }] },
+
+    { "id": "apply", "type": "backend", "label": "8 · Apply", "sublabel": "idempotent write · recheck", "tag": "five terminal states", "pos": [300, 340], "size": [165, 88], "sources": [{ "path": "pipeline/apply.py", "label": "assign_state" }, { "path": "pipeline/reconciliation.py" }] },
+    { "id": "validator", "type": "security", "label": "7 · Validator", "sublabel": "the 1.7.5 chain, in full", "tag": "allowlist checked twice", "pos": [555, 340], "size": [165, 88], "sources": [{ "path": "pipeline/validator.py" }] },
+    { "id": "instantiator", "type": "backend", "label": "6 · Instantiator", "sublabel": "template to candidate JV", "tag": "amount derived in code", "pos": [810, 340], "size": [165, 88], "sources": [{ "path": "pipeline/instantiator.py" }] },
+    { "id": "classifier", "type": "cloud", "label": "5 · Classifier", "sublabel": "Slot A — eight subtypes", "tag": "baseline · hybrid · llm", "pos": [1065, 340], "size": [165, 88], "sources": [{ "path": "pipeline/classifier.py" }, { "path": "pipeline/exception_class.py" }] },
+
+    { "id": "ledger", "type": "database", "label": "SQLite ledger", "sublabel": "idempotency in the schema", "tag": "one row per posted leg", "pos": [300, 485], "size": [165, 88], "sources": [{ "path": "pipeline/storage.py" }] },
+    { "id": "reporter", "type": "frontend", "label": "9 · Reporter", "sublabel": "metrics · matrices · report", "tag": "report.html + metrics.json", "pos": [555, 485], "size": [165, 88], "sources": [{ "path": "pipeline/metrics.py" }, { "path": "pipeline/eval_report.py" }, { "path": "pipeline/report.py" }] },
+    { "id": "groundtruth", "type": "database", "label": "ground_truth.jsonl", "sublabel": "evaluation-only", "tag": "never read by pipeline/", "pos": [810, 485], "size": [165, 88], "sources": [{ "path": "pipeline/ground_truth.py" }] }
+  ],
+  "connections": [
+    { "id": "disk-to-adapters", "from": "sources", "to": "adapters", "variant": "emphasis" },
+    { "id": "adapters-to-assembly", "from": "adapters", "to": "assembly", "label": "canonical rows", "variant": "emphasis" },
+    { "id": "assembly-to-matcher", "from": "assembly", "to": "matcher", "label": "cases", "variant": "emphasis" },
+    { "id": "matcher-to-predicates", "from": "matcher", "to": "predicates", "label": "residual", "variant": "emphasis" },
+    { "id": "predicates-to-classifier", "from": "predicates", "to": "classifier", "label": "evidence bundle", "variant": "emphasis", "fromSide": "right", "toSide": "right", "via": [[1300, 84], [1300, 384]], "labelAt": [1300, 234] },
+    { "id": "classifier-to-instantiator", "from": "classifier", "to": "instantiator", "label": "subtype", "variant": "emphasis" },
+    { "id": "instantiator-to-validator", "from": "instantiator", "to": "validator", "label": "candidate JV", "variant": "emphasis" },
+    { "id": "validator-to-apply", "from": "validator", "to": "apply", "label": "checks passed", "variant": "emphasis" },
+
+    { "id": "sem-assembly", "from": "semantics", "to": "assembly", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "sem-matcher", "from": "semantics", "to": "matcher", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "sem-predicates", "from": "semantics", "to": "predicates", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "sem-classifier", "from": "semantics", "to": "classifier", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "sem-apply", "from": "semantics", "to": "apply", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "cache-sem", "from": "caches", "to": "semantics", "label": "hit or fallback", "variant": "dashed", "fromSide": "left", "toSide": "right" },
+    { "id": "cache-classifier", "from": "caches", "to": "classifier", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+
+    { "id": "apply-to-ledger", "from": "apply", "to": "ledger", "label": "post once", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [330, 460] },
+    { "id": "apply-to-reporter", "from": "apply", "to": "reporter", "label": "terminal state", "fromSide": "bottom", "toSide": "top" },
+    { "id": "ledger-to-reporter", "from": "ledger", "to": "reporter", "label": "posted legs", "fromSide": "right", "toSide": "left" },
+    { "id": "gt-to-reporter", "from": "groundtruth", "to": "reporter", "label": "graded against", "fromSide": "left", "toSide": "right" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Deterministic spine", "items": ["run_batch composes components 2 to 8 into one call", "generator/ reaches the pipeline only through disk", "Money is int paise wherever a decision depends on it"] },
+    { "dot": "amber", "title": "Model-touching arms", "items": ["Semantics threads into components 2, 3, 4, 5 and 8", "Contested credits are the one read on the money path", "Neither arm originates an account, amount or narration"] },
+    { "dot": "emerald", "title": "Verification", "items": ["Template allowlist checked twice, transcribed not derived", "UNIQUE(case_id, resolution_id, account_code) is idempotency", "Every bank line lands in exactly one disposition"] }
+  ]
+}
