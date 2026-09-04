@@ -52,7 +52,7 @@ recovers injected intent — not that the intent resembles real books. And the
 batch is anomaly-enriched tenfold, so match rate here isn't comparable to any
 industry figure.
 
-Seven hundred cases a second. Six hundred and five tests. A clean clone
+Seven hundred cases a second. Six hundred and fourteen tests. A clean clone
 reproduces these metrics byte for byte."
 
 > **Screen:** scroll one `AUTO_CLOSED` case's audit trail so the six validations
@@ -74,9 +74,9 @@ That is not a result. So I went looking for why.
 Five of my decision boundaries were keyword lists — is this credit from Razorpay,
 is this a reversal, is this a tax position. Each separated my own generator's
 string pools perfectly: a hundred percent hit, zero percent miss. My import guard
-couldn't see it, because a shared *vocabulary* isn't an import. Six hundred tests
-couldn't see it, because not one fed the pipeline a string my generator couldn't
-have written.
+couldn't see it, because a shared *vocabulary* isn't an import. Six hundred
+tests couldn't see it either, because not one fed the pipeline a string my
+generator couldn't have written.
 
 So I rebuilt the same hundred and fifty cases, same answer key copied byte for
 byte, and changed only the words the bank used. RZRPAY instead of RAZORPAY.
@@ -141,7 +141,7 @@ resolving a contest no rule can express, and proposing a column map for a
 statement format it's never seen — which a deterministic parser accepts or
 rejects. It got an unseen Kotak export right first try.
 
-What broke and what I did about it is a file in the repo. Nine incidents,
+What broke and what I did about it is a file in the repo. Twenty incidents,
 including a constraint that made auto-close unreachable for all fifty cases, and
 a review this week that caught me shipping the classifier arm that measured
 *worst*.

@@ -91,7 +91,7 @@ with rather than driving any randomness here."""
 
 
 class SemanticsArm(str, Enum):
-    """Which implementation answers the five free-text reads (`pipeline.semantics`).
+    """Which implementation answers the six free-text reads (`pipeline.semantics`).
 
     Separate from `ClassifierArm` because they are different questions and the
     §5.4 ablation wants them separable: `--classifier` chooses who assigns a
@@ -248,7 +248,7 @@ def reconcile(
     ),
     semantics: SemanticsArm = typer.Option(
         SemanticsArm.KEYWORD.value,
-        help="Who answers the five free-text reads over bank/adjustment prose "
+        help="Who answers the six free-text reads over bank/adjustment prose "
         "(pipeline.semantics): 'keyword' (literal substrings, the default and "
         "§5.4's baseline) or 'llm' (constrained, cached). Try 'llm' against "
         "--data-dir data/heldout_vocab, where the keyword arm cannot complete a run.",

@@ -89,7 +89,7 @@ flowchart TB
 
 ### How one case reaches its state
 
-`pipeline.apply.assign_state` is six branches, and **the order of the branches is the precedence** — which is the part prose renders badly and a picture renders exactly. Each branch is §3.3's, and two orderings in particular are load-bearing: a policy exclusion is evaluated *before* anything else, "regardless of model confidence" and regardless of the fact that the entry would have validated; and a correction that landed outranks any subtype trigger the same case also fired, because §3.3 defines `OPERATIONAL_EXCEPTION` as a discrepancy no journal entry can resolve.
+`pipeline.apply.assign_state` is six branches evaluated in a fixed order, and that order *is* the precedence rule: the first branch a case satisfies decides its terminal state, so reordering them silently relabels cases. Each branch is §3.3's, and two of the orderings are load-bearing: a policy exclusion is evaluated *before* anything else, "regardless of model confidence" and regardless of the fact that the entry would have validated; and a correction that landed outranks any subtype trigger the same case also fired, because §3.3 defines `OPERATIONAL_EXCEPTION` as a discrepancy no journal entry can resolve.
 
 ```mermaid
 flowchart TB

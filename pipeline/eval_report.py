@@ -341,8 +341,8 @@ PROVISIONAL_THRESHOLDS: tuple[ThresholdTarget, ...] = (
         kind=TargetKind.GROUND_TRUTH_COUNT,
         target_text="≈ 11.3%",
         note=(
-            "By construction, not by performance. A large deviation is a bug in policy "
-            "routing, and MUST be read as one"
+            "By construction, not by performance: a large deviation here is a bug in "
+            "policy routing rather than a change in detection quality"
         ),
     ),
     ThresholdTarget(

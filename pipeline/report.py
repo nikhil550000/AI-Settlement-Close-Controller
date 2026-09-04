@@ -102,13 +102,20 @@ constant is rendered with `| safe` specifically so its apostrophe survives intac
 
 ANOMALY_ENRICHMENT_DISCLOSURE = (
     "match_rate on this batch is not comparable to any industry figure. The batch is "
-    "deliberately anomaly-enriched for metric legibility. The enrichment factor MUST be "
-    "stated in the README, in the report header of the FR-11 HTML artifact, and in the "
-    "pitch video, alongside the observation that EXTERNAL_ACTION_REQUIRED runs high "
-    "(roughly 21%) because orphan cases are unresolvable by construction."
+    "deliberately anomaly-enriched for metric legibility, by roughly an order of "
+    "magnitude against a real-world break rate in the low single digits. "
+    "EXTERNAL_ACTION_REQUIRED runs correspondingly high because orphan cases are "
+    "unresolvable by construction and are the majority of that state's population."
 )
-"""§3.5's "Anomaly enrichment — disclosure requirement" blockquote, verbatim in
-substance (markdown stripped, per `SYNTHETIC_EVAL_DISCLOSURE`'s note)."""
+"""§3.5's "Anomaly enrichment" disclosure, addressed to this report's reader.
+
+§3.5 states the requirement in the second person to the *builder* ("the enrichment
+factor MUST be stated in the README, in the report header, and in the pitch video").
+Reproducing that sentence verbatim printed an instruction to the author inside an
+artifact written for a reviewer, and quoted a stale "roughly 21%" beside the live
+figure the template computes two lines below it. The disclosure's *substance* is
+what §3.5 requires be carried; the sentence naming where to carry it is not part
+of the disclosure. The concrete share is rendered from the run, never hardcoded."""
 
 
 # --- Money, rendered without ever dividing with a float. ---

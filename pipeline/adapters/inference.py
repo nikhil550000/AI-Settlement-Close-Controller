@@ -43,7 +43,7 @@ model than an eight-value enum:
    it goes to some trouble not to. A verifier that re-implements the
    parser verifies the wrong program.
 3. **A proposal is not believed; it is executed and checked.**
-   `verify_proposal` runs eight deterministic checks (below), including
+   `verify_proposal` runs nine deterministic checks (below), including
    double-entry balance continuity — arithmetic the model cannot see the
    answer to and cannot talk its way past. An unverified proposal never
    becomes a profile, and `InferenceResult.accepted` is set by
@@ -60,7 +60,7 @@ best case is a YAML file that is byte-for-byte the same kind of artifact a
 human would have hand-written — reviewable, diffable, and committable next
 to `hdfc.yaml`. Nothing in between reaches the ledger.
 
-## The eight checks, and why each one is there
+## The nine checks, and why each one is there
 
 `verify_proposal` fails on the *first* violated check and reports it in
 the model's own vocabulary, because the error string is not for a log —
