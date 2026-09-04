@@ -1,10 +1,10 @@
-"""The one shared narration pool, per spec.md §3.5's fingerprint control.
+"""The one shared narration pool, and the fingerprint control it exists to satisfy.
 
 > **Fingerprint control.** The failure mode that matters is anomalous cases
 > becoming identifiable by *artifact* rather than by *evidence* —
 > sequential IDs assigned per scenario, timestamps generated in scenario
 > blocks, **narration strings unique to one anomaly type**. Any of these
-> silently inflates every metric in 1.6. Mitigation: [...] draw narration
+> silently inflates every metric. Mitigation: [...] draw narration
 > text from one shared pool regardless of scenario.
 
 Every free-text string the generator writes comes from this module, and
@@ -16,15 +16,15 @@ credit"`, `"bank debited prematurely at capture"` each named its own
 anomaly, and the posted amount appeared in the text as a second copy of
 the evidence.
 
-**Three strings stay scenario-bearing, and each is evidence the spec
+**Three strings stay scenario-bearing, and each is evidence the design
 requires, not artifact:**
 
-- the two FR-06 tax signatures (`TAX_SIGNATURES`), because §4.2 fixes them
+- the two tax signatures (`TAX_SIGNATURES`), because they are fixed
   as the detection surface — "a 194-O deduction has a signature in the
   adjustment line";
 - an opaque credit narration versus one naming a counterparty, because
-  §3.6 splits sixteen orphan cases on exactly that line;
-- a bank-charge narration, because §3.6's noise lines exist to exercise
+  that line splits sixteen orphan cases;
+- a bank-charge narration, because the noise lines exist to exercise
   the matcher's ignore path.
 
 Everything else — ledger narrations, settlement-credit narrations,
@@ -32,14 +32,14 @@ reversal narrations, counterparty names, adjustment descriptions — is
 drawn from a pool shared across every population that emits that kind of
 record.
 
-## UTR narration variety (§4.6)
+## UTR narration variety
 
 > **Generator obligation.** The cascade is only tested if the narration
 > varies. The generator MUST produce roughly 50% clean UTR, 25% embedded,
 > 15% truncated, 10% absent.
 
 `UtrShape` is that split's vocabulary, and the four shapes are defined
-here as *text* shapes so §4.6's matcher (session 3.3) has a contract to
+here as *text* shapes so the matcher (session 3.3) has a contract to
 implement against rather than a corpus to guess at:
 
 | Shape | The UTR in the narration |
@@ -49,11 +49,12 @@ implement against rather than a corpus to guess at:
 | `TRUNCATED` | a contiguous prefix, at least `TRUNCATED_MIN_LENGTH` characters |
 | `ABSENT` | not present in any form |
 
-`CLEAN` is reachable by §4.6 tier 0 under either reading of "appears as a
-token"; `TRUNCATED` is reachable only at tier 1; `ABSENT` only at tier 2,
-on amount and date window. `EMBEDDED` sits between tier 0 and tier 1
-depending on how the matcher tokenizes, which is session 3.3's call to
-make — the generator's obligation is the variety, not the tier.
+`CLEAN` is reachable by the matcher's first tier under either reading of
+"appears as a token"; `TRUNCATED` is reachable only at the second tier;
+`ABSENT` only at the third, on amount and date window. `EMBEDDED` sits
+between the first and second tiers depending on how the matcher
+tokenizes, which is session 3.3's call to make — the generator's
+obligation is the variety, not the tier.
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ from enum import StrEnum
 UTR_LENGTH = 16
 """Characters in a generated UTR — the length of a real NEFT/RTGS UTR.
 
-Session 2.2 minted 9-character UTRs, which left §4.6 tier 1's "contiguous
+Session 2.2 minted 9-character UTRs, which left the second tier's "contiguous
 prefix of length >= 8" with exactly one truncation length to work with,
 making the truncated population a single degenerate case rather than a
 range. Sixteen characters is both the realistic figure and enough room for
@@ -75,7 +76,7 @@ range. Sixteen characters is both the realistic figure and enough room for
 TRUNCATED_MIN_LENGTH = 10
 """Shortest UTR prefix the generator will write into a narration.
 
-§4.6 tier 1 accepts a prefix of length >= 8. The generator holds itself to
+The matcher's second tier accepts a prefix of length >= 8. The generator holds itself to
 10 so that two settlements can never share a written prefix by accident:
 at 8 characters a collision across ~100 settlements is remote but real,
 and a collision would put two settlements in the same tier-1 candidate set
@@ -124,7 +125,7 @@ _LEDGER_NARRATION_TEMPLATES = (
 )
 
 # --- Adjustment descriptions. `recon_line.description` on an adjustment
-# row is the FR-06 detection surface (§4.2), so every adjustment carries
+# row is the tax-position detection surface, so every adjustment carries
 # one: if only the tax positions had a description, its mere presence
 # would be the tell rather than its content. ---
 
@@ -132,11 +133,11 @@ TAX_SIGNATURES = (
     "TDS deduction under Section 194-O (e-commerce operator)",
     "GST input tax credit eligibility review — MDR component",
 )
-"""§2.5/FR-06's two policy exclusions, as they appear in the adjustment line.
+"""The two policy exclusions, as they appear in the adjustment line.
 
-Scenario-bearing by requirement, not by accident: §4.2 states that "a
-194-O deduction has a signature in the adjustment line" and anticipates a
-predicate reading it. These are the only two narration strings in the
+Scenario-bearing by requirement, not by accident: a
+194-O deduction has a signature in the adjustment line, and a predicate is
+expected to read it. These are the only two narration strings in the
 generator that identify the population that produced them.
 """
 
@@ -183,11 +184,11 @@ OPAQUE_CREDIT_NARRATIONS = (
     "BY TRANSFER",
     "CREDIT-MISC",
 )
-"""§3.6's "inbound credit, opaque narration" — no identifiable counterparty.
+"""An "inbound credit, opaque narration" — no identifiable counterparty.
 
-Scenario-bearing by requirement: §4.2 states the `UNMATCHED_INBOUND_CREDIT`
-versus `AMBIGUOUS_CASE` split "turns entirely on whether the free-text
-narration identifies a counterparty."
+Scenario-bearing by requirement: the `UNMATCHED_INBOUND_CREDIT`
+versus `AMBIGUOUS_CASE` split turns entirely on whether the free-text
+narration identifies a counterparty.
 """
 
 _DEBIT_TEMPLATES = (
@@ -213,11 +214,11 @@ _BANK_CHARGE_NARRATIONS = (
     "ATM AMC CHARGES",
     "DEBIT CARD ANNUAL FEE",
 )
-"""§3.6: "Bank charges stay noise, not cases" — these exist to be ignored."""
+"""Bank charges stay noise, not cases — these exist to be ignored."""
 
 
 class UtrShape(StrEnum):
-    """How a UTR appears in a `bank_line.narration` (§4.6's generator obligation)."""
+    """How a UTR appears in a `bank_line.narration` (the generator's narration-variety obligation)."""
 
     CLEAN = "clean"
     EMBEDDED = "embedded"
@@ -231,7 +232,7 @@ UTR_SHAPE_TARGET_SHARE = {
     UtrShape.TRUNCATED: 15,
     UtrShape.ABSENT: 10,
 }
-"""§4.6, verbatim: "roughly 50% clean UTR, 25% embedded, 15% truncated, 10% absent"."""
+"""Verbatim target: "roughly 50% clean UTR, 25% embedded, 15% truncated, 10% absent"."""
 
 
 def random_utr(rng: random.Random) -> str:
@@ -256,7 +257,7 @@ def random_payment_method(rng: random.Random) -> str:
 
 
 def neutral_adjustment_description(rng: random.Random) -> str:
-    """A non-tax adjustment description, so that FR-06 is detectable by content and not by presence."""
+    """A non-tax adjustment description, so that a tax position is detectable by content and not by presence."""
     return rng.choice(_NEUTRAL_ADJUSTMENT_DESCRIPTIONS)
 
 
@@ -290,7 +291,7 @@ def credit_narration(rng: random.Random, *, party: str, utr: str, shape: UtrShap
 
 
 def opaque_credit_narration(rng: random.Random) -> str:
-    """An inbound credit naming no counterparty (§3.6's `AMBIGUOUS_CASE` orphan population)."""
+    """An inbound credit naming no counterparty (the `AMBIGUOUS_CASE` orphan population)."""
     return rng.choice(OPAQUE_CREDIT_NARRATIONS)
 
 
@@ -300,7 +301,7 @@ def debit_narration(rng: random.Random, *, party: str, reference: str) -> str:
 
 
 def reversal_narration(rng: random.Random, *, party: str, reference: str) -> str:
-    """A reversal narration, shared by §3.6's `REVERSAL_UNMATCHED` cases and the self-matching noise pairs.
+    """A reversal narration, shared by `REVERSAL_UNMATCHED` cases and the self-matching noise pairs.
 
     One pool for both: the two are separated by whether a matching prior
     credit exists in the batch, which is evidence, and must not also be
@@ -364,8 +365,8 @@ def narration_template(narration: str) -> str:
     whether the *choice* of sentence shape correlates with scenario, which
     needs the shape recovered from the text. It raises rather than
     returning `None` on a miss: an unrecognised narration means a string
-    was written from outside the shared pool, which is the exact §3.5
-    failure this module exists to prevent.
+    was written from outside the shared pool, which is the exact
+    fingerprint failure this module exists to prevent.
     """
     for template, regex in _TEMPLATE_REGEXES:
         if regex.fullmatch(narration):

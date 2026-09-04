@@ -7,7 +7,7 @@ orphan populations. Session 2.3 adds a field that every population needs
 batch before the global pass, so the two collapse into one type here and
 survive as aliases at their old import sites.
 
-The four record lists are exactly the §3.1 canonical schemas plus §1.6's
+The four record lists are exactly the canonical schemas plus the
 ground truth: what the generator writes to disk. `settlement_credit_of`
 is generator-side bookkeeping that never reaches a JSONL file — see its
 own docstring.
@@ -32,13 +32,14 @@ class GeneratedBatch:
     settlement_credit_of: dict[str, str] = field(default_factory=dict)
     """`bank_line.line_id` -> `settlement.id`, for landed settlement credits only.
 
-    Not part of the dataset: §3.1 has no such field and the pipeline must
-    discover this link for itself — recovering it is precisely what §4.6's
-    cascade is graded on. It exists because `generator/finalize.py`'s UTR
-    variety pass has to rewrite each settlement credit's narration knowing
-    which settlement's UTR it carries, and rediscovering that after the
-    fact by parsing narrations would be the generator grading its own
-    matcher. REV-17's 27 no-credit cases are simply absent from it.
+    Not part of the dataset: the canonical schemas have no such field, and
+    the pipeline must discover this link for itself — recovering it is
+    precisely what the matching cascade is graded on. It exists because
+    `generator/finalize.py`'s UTR variety pass has to rewrite each
+    settlement credit's narration knowing which settlement's UTR it
+    carries, and rediscovering that after the fact by parsing narrations
+    would be the generator grading its own matcher. The 27 no-credit
+    cases are simply absent from it.
     """
 
     def extend(self, other: "GeneratedBatch") -> None:

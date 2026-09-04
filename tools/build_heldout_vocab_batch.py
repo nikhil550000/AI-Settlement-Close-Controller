@@ -6,7 +6,7 @@ Structure in, structure out. Every record keeps its ids, amounts, dates,
 UTRs, references, directions and linkage exactly; the only fields that change
 are the free-text ones — `bank_line.narration`, `recon_line.description`,
 `ledger_entry.narration`. `ground_truth.jsonl` is copied byte-for-byte,
-because the labels were written from the injection plan (§3.5) and nothing
+because the labels were written from the injection plan and nothing
 this script touches can move one.
 
 That is what makes the output a *fair* held-out set rather than a harder one:
@@ -19,7 +19,7 @@ Rewriting is by template, not by search-and-replace: each narration is matched
 against the generator's own `ALL_TEMPLATES` (most specific first, exactly as
 `generator.narration.narration_template` does), its `{party}`/`{ref}`/`{method}`
 slots are extracted, and the held-out template at the same index is re-rendered
-with the same slot values — `{ref}` verbatim, so FR-09's tier cascade sees the
+with the same slot values — `{ref}` verbatim, so the matcher's tier cascade sees the
 identical token it saw before, and `{party}` through the party map. A narration
 that matches no template raises, for the same reason `narration_template` does:
 a string from outside the shared pool means the rewrite is incomplete, and

@@ -85,7 +85,15 @@ class MatchTier(IntEnum):
     NO_MATCH = 3
 
 
-def _normalize(text: str) -> str:
+def normalize_reference(text: str) -> str:
+    """Uppercase `text` and drop every non-alphanumeric character.
+
+    Public because the attachment audit has to compare a settlement's UTR
+    against a narration the same way tier 0 does. A second, slightly
+    different normalizer there would corroborate matches this one never
+    made, which is the one way that audit could report a clean result over
+    a batch that does not have one.
+    """
     return "".join(ch for ch in text.upper() if ch.isalnum())
 
 
@@ -100,10 +108,10 @@ def _tier0_candidates(utr_normalized: str, bank_lines: Sequence[BankLine]) -> li
     for line in bank_lines:
         if line.deposit_paise <= 0:
             continue
-        if line.bank_ref_no is not None and _normalize(line.bank_ref_no) == utr_normalized:
+        if line.bank_ref_no is not None and normalize_reference(line.bank_ref_no) == utr_normalized:
             matches.append(line)
             continue
-        if any(_normalize(word) == utr_normalized for word in line.narration.split()):
+        if any(normalize_reference(word) == utr_normalized for word in line.narration.split()):
             matches.append(line)
     return matches
 
@@ -146,7 +154,7 @@ def match_settlement_anchored_case(case: Case, bank_lines: Sequence[BankLine], *
         raise ValueError(f"settlement-anchored case {case.case_id!r} carries no settlement")
 
     utr_upper = settlement.utr.upper()
-    utr_normalized = _normalize(settlement.utr)
+    utr_normalized = normalize_reference(settlement.utr)
 
     tier0 = _tier0_candidates(utr_normalized, bank_lines)
     if tier0:

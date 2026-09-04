@@ -1,18 +1,18 @@
 """Exception, tax, ambiguous populations — the settlement-anchored rows of
-spec.md §3.5's case-allocation table not already built by session 2.1's
+the case-allocation table not already built by session 2.1's
 `generator/families.py`: family-4 no-op (12), family-4 date-error (5),
-FR-06 tax positions (12), `SETTLEMENT_UTR_MISSING` (5),
+tax positions (12), `SETTLEMENT_UTR_MISSING` (5),
 `BANK_CREDIT_OVERDUE` (5), `SETTLEMENT_AMOUNT_MISMATCH` (4),
 `DISPUTE_PENDING` chargebacks (5), and `AMBIGUOUS_CASE` (9) — 57 cases,
 which combined with session 2.1's 50 and the "Fully clean" 18 completes
 the 125 settlement-anchored total.
 
 This is the first module to generate `bank_line` records for cases that
-*do* carry a landed credit — REV-17's "98 with-credit" settlement-anchored
+*do* carry a landed credit — the "98 with-credit" settlement-anchored
 population, membership `18 (clean) + 40 (families 1/2/3/5) + 5
-(date-error) + 12 (FR-06) + 5 (UTR-missing) + 4 (amount-mismatch) + 5
+(date-error) + 12 (tax) + 5 (UTR-missing) + 4 (amount-mismatch) + 5
 (dispute-pending) + 9 (ambiguous) = 98`, computed independently from
-REV-17's own arithmetic (`125 - 27 = 98`) as a cross-check.
+the population's own arithmetic (`125 - 27 = 98`) as a cross-check.
 
 Every case reuses `generator/clean.py`'s and `generator/families.py`'s
 existing building blocks (`_generate_payment`, `_new_settlement_shell`,
@@ -66,22 +66,23 @@ N_DISPUTE_PENDING = 5
 N_AMBIGUOUS = 9
 
 _TAX_SIGNATURES = TAX_SIGNATURES
-"""§4.2 Slot C: "A 194-O deduction has a signature in the adjustment line."
+"""A 194-O deduction has a signature in the adjustment line.
 
-FR-06's second exclusion (GST ITC eligibility on MDR) is given the same
+The second tax exclusion (GST ITC eligibility on MDR) is given the same
 adjustment-line shape for consistency — same schema, same unposted-line
 mechanism, only the narration signature differs — rather than inventing a
-second construction with no COA support (§3.2 fixes the chart of accounts
-at seven, none of them ITC/TDS-specific). Logged in BUILDLOG.md, Decided.
-The strings themselves moved to `generator/narration.py` in session 2.3,
-which owns every free-text string the generator writes.
+second construction with no chart-of-accounts support (the chart of
+accounts is fixed at seven codes, none of them ITC/TDS-specific). Logged
+in BUILDLOG.md, Decided. The strings themselves moved to
+`generator/narration.py` in session 2.3, which owns every free-text
+string the generator writes.
 """
 
 
 def _windowed_settlement_shell(
     rng: random.Random, snapshot_date: date, *, elapsed_working_days: int
 ) -> tuple[str, str, int]:
-    """A settlement shell dated `elapsed_working_days` before the snapshot (§3.3's T+2 rule).
+    """A settlement shell dated `elapsed_working_days` before the snapshot (the T+2 rule).
 
     The *date* is chosen deliberately here rather than drawn, because the
     timing-residual rule compares dates and precise placement relative to
@@ -89,7 +90,7 @@ def _windowed_settlement_shell(
     drawn exactly as every other population draws it: session 2.2 pinned
     these settlements to midnight UTC, which left `created_at % 86400 == 0`
     identifying the two window-anchored populations outright — a timestamp
-    block of the kind §3.5's fingerprint control forbids.
+    block that would fingerprint the population by structure alone.
     """
     created_date = subtract_working_days(snapshot_date, elapsed_working_days)
     settlement_id = _hex_id(rng, "setl_")
@@ -126,7 +127,7 @@ def generate_family_4_no_op_batch(rng: random.Random, snapshot_date: date, n_cas
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        # No bank_line: still inside the window (REV-17's 27-case no-credit set).
+        # No bank_line: still inside the window (part of the 27-case no-credit set).
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -163,7 +164,7 @@ def generate_bank_credit_overdue_batch(
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        # No bank_line: window has elapsed (REV-17's 27-case no-credit set).
+        # No bank_line: window has elapsed (part of the 27-case no-credit set).
         batch.ground_truth.append(
             GroundTruthCase(
                 case_id=settlement.id,
@@ -190,7 +191,7 @@ def generate_bank_credit_overdue_batch(
 def generate_family_4_date_error_batch(
     rng: random.Random, snapshot_date: date, n_cases: int = N_FAMILY_4_DATE_ERROR
 ) -> FamilyBatch:
-    """`ACCOUNTING_CORRECTION`/`MISPOSTING` (REV-19: wrong period), `REVIEW_REQUIRED`/`policy` (REV-11)."""
+    """`ACCOUNTING_CORRECTION`/`MISPOSTING` (wrong period), `REVIEW_REQUIRED`/`policy` (no delta entry to post)."""
     batch = FamilyBatch()
     for _ in range(n_cases):
         settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
@@ -207,8 +208,8 @@ def generate_family_4_date_error_batch(
             if i == anomaly_index:
                 # Correct accounts, correct amounts — only the posted date
                 # is wrong, shifted a full month back across a period
-                # boundary (REV-05/REV-19: "accounts and amount are both
-                # correct" is the entire premise of this variant).
+                # boundary. "Accounts and amount are both correct" is the
+                # entire premise of this variant.
                 shifted_date = datetime.fromtimestamp(recon_line.created_at, tz=timezone.utc).date() - timedelta(days=32)
                 legs = [leg.model_copy(update={"date": shifted_date}) for leg in legs]
                 anomaly_recon_line = recon_line
@@ -221,7 +222,7 @@ def generate_family_4_date_error_batch(
         batch.settlements.append(settlement)
         batch.recon_lines.extend(recon_lines)
         batch.ledger_entries.extend(ledger_entries)
-        # Precondition for this variant (REV-05): the credit has landed.
+        # Precondition for this variant: the credit has landed.
         add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
         batch.ground_truth.append(
             GroundTruthCase(
@@ -235,7 +236,7 @@ def generate_family_4_date_error_batch(
                     *(je.journal_entry_id for je in anomaly_ledger_entries),
                 ),
                 expected_resolution=None,
-                expected_journal_entries=(),  # REV-11: no delta entry exists to post
+                expected_journal_entries=(),  # no delta entry exists to post
                 expected_template_ids=(),
                 expected_decline_reason=DeclineReason.POLICY,
                 should_auto_apply=False,
@@ -244,11 +245,11 @@ def generate_family_4_date_error_batch(
     return batch
 
 
-# --- FR-06 tax positions: same shape as family 5's adjustment, policy-declined. ---
+# --- Tax positions: same shape as family 5's adjustment, policy-declined. ---
 
 
 def generate_fr06_tax_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_FR06_TAX) -> FamilyBatch:
-    """`ACCOUNTING_CORRECTION`/`OMISSION`, `REVIEW_REQUIRED`/`policy` (§2.5/FR-06: 194-O, GST ITC eligibility)."""
+    """`ACCOUNTING_CORRECTION`/`OMISSION`, `REVIEW_REQUIRED`/`policy` (194-O deduction, GST ITC eligibility)."""
     batch = FamilyBatch()
     for i in range(n_cases):
         settlement_id, utr, settlement_created_at = _new_settlement_shell(rng, snapshot_date)
@@ -290,10 +291,10 @@ def generate_settlement_utr_missing_batch(
 ) -> FamilyBatch:
     """`OPERATIONAL_EXCEPTION`/`SETTLEMENT_UTR_MISSING`, `EXTERNAL_ACTION_REQUIRED`.
 
-    `settlement.utr == ""` is the trigger (§3.1's schema states `utr` as
+    `settlement.utr == ""` is the trigger (the schema states `utr` as
     plain, non-nullable `string`; empty string is the "no UTR" value
-    within that type). The bank credit still lands — REV-17 counts this
-    population in the 98 with-credit set — but carries no UTR to embed.
+    within that type). The bank credit still lands — this population is
+    counted in the 98 with-credit set — but carries no UTR to embed.
     """
     batch = FamilyBatch()
     for _ in range(n_cases):
@@ -326,7 +327,7 @@ def generate_settlement_utr_missing_batch(
     return batch
 
 
-# --- SETTLEMENT_AMOUNT_MISMATCH: header amount != recon-line total (the one deliberate §3.5 invariant violation). ---
+# --- SETTLEMENT_AMOUNT_MISMATCH: header amount != recon-line total (the one deliberate invariant violation). ---
 
 
 def generate_settlement_amount_mismatch_batch(
@@ -335,9 +336,9 @@ def generate_settlement_amount_mismatch_batch(
     """`OPERATIONAL_EXCEPTION`/`SETTLEMENT_AMOUNT_MISMATCH`, `EXTERNAL_ACTION_REQUIRED`.
 
     The bank actually credits the true (recon-line) total — it's the
-    settlement header record that's wrong, per §3.3's trigger text
-    ("Settlement header amount ≠ sum of its recon lines net of fees and
-    tax"), not the merchant's books or the cash that moved.
+    settlement header record that's wrong ("settlement header amount
+    does not equal the sum of its recon lines net of fees and tax"),
+    not the merchant's books or the cash that moved.
     """
     batch = FamilyBatch()
     for _ in range(n_cases):
@@ -382,7 +383,7 @@ def generate_settlement_amount_mismatch_batch(
     return batch
 
 
-# --- DISPUTE_PENDING: FR-05's chargeback population, detection/classification only (FR-05 recognition not built). ---
+# --- DISPUTE_PENDING: chargeback population, detection/classification only (recognition not built). ---
 
 
 def generate_dispute_pending_batch(
@@ -390,10 +391,10 @@ def generate_dispute_pending_batch(
 ) -> FamilyBatch:
     """`OPERATIONAL_EXCEPTION`/`DISPUTE_PENDING`, `EXTERNAL_ACTION_REQUIRED`.
 
-    FR-05 (stretch, not committed) is not built this session: "If FR-05 is
-    not built, chargeback cases remain in the dataset and are detected and
+    Chargeback recognition (stretch, not committed) is not built this
+    session: chargeback cases remain in the dataset and are detected and
     classified, terminating in `EXTERNAL_ACTION_REQUIRED` without a posted
-    entry" (§2.4). Books stay correctly booked; `dispute_id` on one payment
+    entry. Books stay correctly booked; `dispute_id` on one payment
     is the only anomaly.
     """
     batch = FamilyBatch()
@@ -446,7 +447,7 @@ def generate_dispute_pending_batch(
 def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: int = N_AMBIGUOUS) -> FamilyBatch:
     """`AMBIGUOUS_CASE`, `ABSTAINED`.
 
-    §3.3: "a required piece of evidence is absent." Concretely: an
+    A required piece of evidence is absent. Concretely: an
     otherwise-clean settlement plus one extra, internally-balanced
     contra-revenue ledger pair posted against one of the settlement's own
     payments, for which **no `refund` recon line exists anywhere in the
@@ -462,15 +463,14 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
     nothing anywhere in the batch. That made the pair unresolvable, but it
     also made it *unattributable*: `ledger_entry.reference ==
     recon_line.entity_id` is the only join between the ledger and a case
-    (§3.1, and `pipeline/predicates.py`'s ledger index), so a reference
+    (and `pipeline/predicates.py`'s ledger index), so a reference
     resolving to nothing belongs to no case at all — the nine cases carried
     `ABSTAINED` ground truth that no component, deterministic or model,
     could ever have reached from evidence. Found and fixed in session 4.1
     with user sign-off, the same way session 3.2 handled `orphans.py`'s
     noise-direction bug. Anchoring on a real payment keeps the evidence
-    genuinely insufficient while making it reachable, which is what §3.3
-    describes and what the metric surface needs in order to grade
-    abstention at all.
+    genuinely insufficient while making it reachable, which is what the
+    metric surface needs in order to grade abstention at all.
     """
     batch = FamilyBatch()
     for _ in range(n_cases):
@@ -483,10 +483,10 @@ def generate_ambiguous_batch(rng: random.Random, snapshot_date: date, n_cases: i
         # internally-inconsistent posting, not a plausible reversal of it.
         phantom_amount = _payment_amount_paise(rng)
         entry_date = datetime.fromtimestamp(settlement_created_at, tz=timezone.utc).date()
-        # Shared pool, same as every other ledger entry (§3.5): the case's
+        # Shared pool, same as every other ledger entry: the case's
         # evidence is that `reference` resolves to nothing in the batch, and
-        # session 2.2's narration said so in words, which is the artifact the
-        # fingerprint control exists to remove.
+        # session 2.2's narration said so in words, which would have been a
+        # fingerprint rather than genuine evidence.
         narration = ledger_narration(rng, method=random_payment_method(rng))
         phantom_entries = [
             LedgerEntry(
@@ -561,7 +561,7 @@ EXCEPTION_POPULATIONS = (
 
 
 def generate_all_exception_batches(rng: random.Random, snapshot_date: date) -> FamilyBatch:
-    """All eight populations this module owns, 57 cases combined (spec.md §3.5's remaining settlement-anchored rows)."""
+    """All eight populations this module owns, 57 cases combined (the remaining settlement-anchored rows)."""
     combined = FamilyBatch()
     for _name, generate in EXCEPTION_POPULATIONS:
         combined.extend(generate(rng, snapshot_date))

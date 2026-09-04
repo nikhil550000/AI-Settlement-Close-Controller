@@ -1,7 +1,7 @@
 [project]
 name = "settlement-close-controller"
 version = "0.1.0"
-description = "Add your description here"
+description = "Exception-resolution layer for settlement accounting: the model reads, deterministic code posts."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

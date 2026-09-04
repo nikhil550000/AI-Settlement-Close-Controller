@@ -9,12 +9,12 @@ there is nothing random to reproduce. Money is integer paise throughout.
 
 ## The finding this batch exists for
 
-FR-09 tier 2 (§4.6) matches a bank credit to a settlement on an exact amount
+The matcher's tier 2 matches a bank credit to a settlement on an exact amount
 inside the T+2 window plus one slack day. **That key is not unique to a
 settlement.** Two settlements of the same amount created the same day each
 see exactly one candidate credit, each match it at tier 2, each report
 `residual_paise = 0`, and both reach a terminal state on the strength of one
-bank credit that can belong to at most one of them. §4.6's own tie rule ("a
+bank credit that can belong to at most one of them. The matcher's own tie rule ("a
 tie is not a match; it routes to ambiguity") was enforced only *within* one
 settlement's candidate list — `len(tier2) == 1` — which is the tie a per-case
 cascade can see. The symmetric tie *across* settlements needs a batch-wide
@@ -34,7 +34,7 @@ bank credit of that amount inside the window, its narration naming the gateway
 and carrying no UTR and no discriminator of any kind. Ground truth for both
 settlements of a pair is `ABSTAINED` / `AMBIGUOUS_CASE`. That is not a
 concession — the evidence genuinely does not say which settlement the credit
-belongs to, so abstaining on both is the *correct* answer, and §1.3's
+belongs to, so abstaining on both is the *correct* answer, and the
 optimization principle ranks a false match strictly worse than a deferral.
 
 **2. `CONTESTED_DECIDABLE` (4 cases = 2 pairs).** The same construction, except
@@ -68,17 +68,17 @@ bank-versus-settlement one. If the merchant's books were incomplete, a
 contested case would abstain because of the books and the match tier would
 never enter the outcome. So every settlement here is booked accrual-correct —
 `Dr Razorpay Clearing (net) / Dr Payment Gateway Charges (fee) / Dr GST (tax)
-/ Cr Sales Revenue (gross)`, §3.2's own posting — and its residual is 0. The
+/ Cr Sales Revenue (gross)`, the standard accrual-correct posting — and its residual is 0. The
 only thing left that can move the outcome is the match.
 
 Every contested settlement is then created early enough that its T+2 window
 has elapsed by the 2026-08-28 snapshot. That is what makes the demotion
-visible: at tier 3 with an elapsed window, §3.3's `BANK_CREDIT_OVERDUE`
+visible: at tier 3 with an elapsed window, the `BANK_CREDIT_OVERDUE`
 trigger fires and the case terminates in `EXTERNAL_ACTION_REQUIRED`. Under the
 *old* per-case-only tie rule the same case matched at tier 2, fired no
 trigger, and — with a zero books residual — reached `AUTO_MATCHED`. Four
 guaranteed false matches, on two credits. Were the window still open instead,
-a clean-booked settlement would read as §3.3's `EXPECTED_TIMING_DIFFERENCE`
+a clean-booked settlement would read as `EXPECTED_TIMING_DIFFERENCE`
 and `AUTO_MATCHED` would be *correct* on both sides of the fix, and this batch
 would measure nothing.
 
@@ -184,14 +184,14 @@ def _payment(
 
 
 def _clean_books(entity_id: str, book_date: date, *, gross: int, fee: int, tax: int, method: str) -> list[LedgerEntry]:
-    """§3.2's accrual-correct posting for one settled payment, in integer paise.
+    """The accrual-correct posting for one settled payment, in integer paise.
 
     Four legs, balanced (`net + fee + tax == gross`), and deliberately *correct*:
     the merchant's bookkeeping is not what is in question in this batch, and a
     case whose books are wrong would abstain on the books rather than on the
     match. Posting `Payment Gateway Charges` is also what keeps `T-01` from
     firing, and crediting `Sales Revenue` at gross rather than net is what keeps
-    `T-03` from firing — so no §3.4 template addresses these cases and the
+    `T-03` from firing — so no template addresses these cases and the
     outcome turns on the match alone.
     """
     narration = f"ERP import - Razorpay {method.upper()} collection"
@@ -255,8 +255,8 @@ def _add_settlement(
 
     `lines` is `(entity_id suffix, gross, fee, tax)` per recon line. The
     settlement header's `amount`/`fees`/`tax` are the sums over those lines,
-    which is §3.5's own invariant (`amount == sum(credits) - sum(debits) - fees
-    - tax`) and therefore keeps §3.3's `SETTLEMENT_AMOUNT_MISMATCH` trigger
+    which satisfies the settlement's own invariant (`amount == sum(credits) - sum(debits) - fees
+    - tax`) and therefore keeps the `SETTLEMENT_AMOUNT_MISMATCH` trigger
     silent — this batch is about matching, and an amount-mismatch trigger would
     route these cases for an unrelated reason.
     """
@@ -527,8 +527,8 @@ for _index, (_setl_id, _utr, _created, _line, _method) in enumerate(_CONTROLS):
         method=_method,
     )
     _line_id = f"con_bank_{_line[0]}"
-    # The UTR is its own whitespace-delimited word, which is §4.6 tier 0's
-    # `CLEAN` shape exactly — `pipeline.matcher` splits the narration on
+    # The UTR is its own whitespace-delimited word, which is the matcher's
+    # tier 0 `CLEAN` shape exactly — `pipeline.matcher` splits the narration on
     # whitespace and requires one whole word to normalize to the UTR.
     _credit(
         line_id=_line_id,

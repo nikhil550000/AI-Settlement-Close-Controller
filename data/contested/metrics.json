@@ -4,6 +4,17 @@
     "numerator": 0,
     "value": 0.0
   },
+  "attachment": {
+    "contradictions": [],
+    "corroborated": 4,
+    "counts": {
+      "amount_window_only": 2,
+      "contradicted": 0,
+      "utr_exact": 4,
+      "utr_prefix": 0
+    },
+    "total_attached": 6
+  },
   "auto_applied_entry_count": 0,
   "auto_close_precision": {
     "denominator": 0,

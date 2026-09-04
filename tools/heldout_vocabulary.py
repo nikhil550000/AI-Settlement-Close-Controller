@@ -1,4 +1,4 @@
-"""A second, disjoint surface vocabulary for the reference batch (§5.3, extended).
+"""A second, disjoint surface vocabulary for the reference batch.
 
 ## Why this exists
 
@@ -17,7 +17,7 @@ keyword lists whose coverage of the generator's own string pools is 100% hit,
 | `pipeline.classifier._BANKING_BOILERPLATE_WORDS` | `OPAQUE_CREDIT_NARRATIONS` |
 | `pipeline.policy._TAX_POSITION_MARKERS` | `TAX_SIGNATURES` |
 
-The §4.1 import guard cannot see any of this: it is a *data* coupling, not an
+The import guard cannot see any of this: it is a *data* coupling, not an
 import. Nor can a seed sweep, because every pool is a module constant that a
 seed does not vary. `tests/` contains no case that feeds the pipeline a string
 the generator could not have written, which is why 543 tests pass over it.
@@ -35,7 +35,7 @@ looking at `RZRPAY SOFTWARE PVT LTD` knows who that is, and a human looking at
 `SUSPENSE-CR` knows it names nobody. The test is not "can the pipeline read
 mangled text" — it is "was the boundary drawn at the concept or at the string".
 
-That distinction is the whole §5.4 question. A keyword list generalizes to
+That distinction is the whole question. A keyword list generalizes to
 exactly the strings it enumerates. Whether a model generalizes past them is
 the one claim this repository makes about its LLM slot that its own reference
 batch has never been able to test.
@@ -74,8 +74,8 @@ LEDGER_NARRATION_TEMPLATES = (
     "PG {method} transaction",
 )
 
-# --- The two FR-06 policy exclusions, in words a different finance team would
-# use. Same two concepts (§2.5's withholding deduction and its indirect-tax
+# --- The two tax-position policy exclusions, in words a different finance team would
+# use. Same two concepts (the withholding deduction and its indirect-tax
 # credit review); no "TDS", no "194", no "ITC", no "INPUT TAX CREDIT". ---
 
 TAX_SIGNATURES = (
@@ -93,7 +93,7 @@ NEUTRAL_ADJUSTMENT_DESCRIPTIONS = (
 
 # --- Bank narrations. Shape is preserved slot-for-slot: a template whose
 # `{ref}` is whitespace-delimited keeps it whitespace-delimited, because that
-# is exactly what separates FR-09 tier 0 from tier 1 (§4.6). Only the words
+# is exactly what separates the matcher's tier 0 from tier 1. Only the words
 # around the slots change. ---
 
 CLEAN_CREDIT_TEMPLATES = (

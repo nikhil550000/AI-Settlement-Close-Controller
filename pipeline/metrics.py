@@ -56,6 +56,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.apply import CaseOutcome
+from pipeline.attachment import AttachmentAudit
 from pipeline.bank_accounting import BankLineAccounting
 from pipeline.case_assembly import Case, CaseKind
 from pipeline.exception_class import OPERATIONAL_SUBTYPES
@@ -449,6 +450,15 @@ class MetricsReport(BaseModel):
     auto_applied_entry_count: int
     """`auto_close_precision`'s denominator, restated as a plain integer."""
 
+    attachment: AttachmentAudit | None = None
+    """What each attached credit rests on (`pipeline.attachment`).
+
+    Not a §1.6 metric and not graded against ground truth. Every §1.6 rate
+    compares terminal *states*, so a settlement that attached the wrong credit
+    still reports clean as long as the amount struck its residual to zero. This
+    is the one figure denominated in *evidence* rather than in labels, and its
+    load-bearing row is `contradicted`, which must be empty."""
+
     bank_line_accounting: BankLineAccounting | None = None
     """Where every bank line went (`pipeline.bank_accounting`).
 
@@ -637,6 +647,7 @@ def compute_metrics(
     *,
     provenance: RunProvenance | None = None,
     bank_line_accounting: BankLineAccounting | None = None,
+    attachment: AttachmentAudit | None = None,
 ) -> MetricsReport:
     """The §1.6 surface for one run.
 
@@ -701,6 +712,7 @@ def compute_metrics(
 
     return MetricsReport(
         bank_line_accounting=bank_line_accounting,
+        attachment=attachment,
         total_cases=total,
         match_rate=match_rate,
         auto_match_recall=auto_match_recall,

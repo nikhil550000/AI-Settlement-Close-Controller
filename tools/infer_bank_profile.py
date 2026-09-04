@@ -1,8 +1,8 @@
-"""CLI entry point for FR-08 bank-profile inference (`pipeline/adapters/inference.py`).
+"""CLI entry point for bank-profile inference (`pipeline/adapters/inference.py`).
 
 Deliberately a standalone `tools/` script rather than a `reconcile` subcommand.
-`pipeline/cli.py` is the *graded* path — FR-10's `reconcile run`, the thing §6.3's
-reproduce checkpoint invokes and the thing every metric in §1.6 is measured through
+`pipeline/cli.py` is the *graded* path — `reconcile run`, the thing the
+reproduce checkpoint invokes and the thing every metric is measured through
 — and profile inference is not part of a reconciliation run. It is an onboarding
 step performed once, by a human, before a new bank's export is ever reconciled: the
 artifact it produces is a YAML file for review, and the reviewed file is what the
@@ -53,7 +53,7 @@ def _load_env_api_key() -> str:
     """Read `FIREWORKS_API_KEY` out of the repo's `.env`, stripping surrounding quotes.
 
     The repo does not auto-load `.env` into the process environment (nothing in
-    `pipeline/` may depend on a dotfile being present — NFR-05's offline mode is the
+    `pipeline/` may depend on a dotfile being present — offline mode is the
     default), so the one mode that genuinely needs a credential reads it explicitly,
     exactly as `scratch/populate_slot_b_cache.py` does. Falls through to the
     environment variable when there is no `.env`, so CI can supply it the usual way.
@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         default=BankProfile.HDFC.value,
         choices=[profile.value for profile in BankProfile],
         help=(
-            "the §3.1 BankProfile tag the inferred profile carries. Provenance only, never "
+            "the BankProfile tag the inferred profile carries. Provenance only, never "
             "inferred: the enum is closed and the model is not asked which bank this is."
         ),
     )

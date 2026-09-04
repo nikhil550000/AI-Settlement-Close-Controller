@@ -1,22 +1,22 @@
-"""Real wall-clock measurement for FR-02/NFR-02 (`throughput`, scale batch) and
-NFR-03 (`end_to_end_latency`, reference batch). Gitignored — a one-off
-measurement script, not a test; §5.5 marks both figures "reported, no
+"""Real wall-clock measurement for throughput (scale batch) and
+end_to_end_latency (reference batch). Gitignored — a one-off
+measurement script, not a test; both figures are "reported, no
 target," and `pipeline.metrics.performance_metrics`'s own arithmetic is
 already unit-tested (session 6.1, `tests/test_metrics.py`).
 
-Session 7.1: the scale batch (§2.2's ~360 cases / ~12,800 raw records)
+Session 7.1: the scale batch (~360 cases / ~12,800 raw records)
 only has two dials exposed by `generate_reference_batch` —
 `n_settlements` (the "Fully clean" population) and `n_cases_per_family`
-(each of the five FR-04 families) — so those two are scaled up and the
+(each of the five families) — so those two are scaled up and the
 eight exception/tax/ambiguous populations plus the four orphan
-populations stay at their §3.5/§3.6 fixed counts (57 + 25 = 82 cases).
+populations stay at their fixed counts (57 + 25 = 82 cases).
 `n_settlements=80, n_cases_per_family=40` gives 80 + 5*40 + 82 = 362
-cases, matching FR-02's "~360" with no new generator code and no change
+cases, matching the "~360" target with no new generator code and no change
 to any committed population size.
 
 Runs the deterministic path only (`classify_batch_baseline`, session
 5.1's keyword baseline) — no network, no LLM cache dependency, matching
-NFR-05's offline requirement for exactly the mode this measurement cares
+the offline requirement for exactly the mode this measurement cares
 about (component throughput, not Slot A's).
 """
 
@@ -66,11 +66,11 @@ def _run(*, seed: int, n_settlements: int, n_cases_per_family: int, label: str):
 
 
 def main() -> None:
-    # NFR-03: end_to_end_latency on the reference batch (seed 0, §2.2's ~150 cases).
-    _run(seed=0, n_settlements=18, n_cases_per_family=10, label="reference (NFR-03 end_to_end_latency)")
+    # end_to_end_latency on the reference batch (seed 0, ~150 cases).
+    _run(seed=0, n_settlements=18, n_cases_per_family=10, label="reference (end_to_end_latency)")
 
-    # FR-02/NFR-02: throughput on the scale batch (seed 3, ~360 cases).
-    _run(seed=3, n_settlements=80, n_cases_per_family=40, label="scale (FR-02/NFR-02 throughput)")
+    # throughput on the scale batch (seed 3, ~360 cases).
+    _run(seed=3, n_settlements=80, n_cases_per_family=40, label="scale (throughput)")
 
 
 if __name__ == "__main__":

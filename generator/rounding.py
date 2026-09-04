@@ -1,4 +1,4 @@
-"""Fee/GST rounding, per spec.md §3.5 and §4.5.
+"""Fee/GST rounding.
 
 `decimal.Decimal` with `ROUND_HALF_UP` is permitted only here, and only
 because the generator needs it to derive fee and GST from a percentage.

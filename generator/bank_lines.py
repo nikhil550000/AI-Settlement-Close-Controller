@@ -1,16 +1,15 @@
-"""Canonical `bank_line` construction, per spec.md §3.1 and FR-01's
-bank-line decomposition (REV-17: ~98 settlement credits + ~28 orphan-case
-lines + ~50 non-settlement noise, ~175 total).
+"""Canonical `bank_line` construction: bank-line decomposition into
+roughly 98 settlement credits, 28 orphan-case lines, and 50 non-settlement
+noise lines (about 175 total).
 
 `bank_line` records are generated directly in their **post-adapter
 canonical shape** (`pipeline.schemas.BankLine`) — not raw bank-statement
-CSV/XLSX text. The FR-08 column-mapping adapter that produces this shape
-from a real bank export is session 3.1's job; §3.1 itself describes
-`bank_line` as "the post-adapter canonical shape the pipeline consumes,"
-which is exactly the layer this module targets.
+CSV/XLSX text. A column-mapping adapter that produces this shape from a
+real bank export is a separate concern; this module targets the
+already-adapted, canonical shape the pipeline consumes.
 
-Every settlement credit is built here with a **clean, full UTR**;
-§4.6's 50/25/15/10 clean/embedded/truncated/absent split is applied in a
+Every settlement credit is built here with a **clean, full UTR**; the
+50/25/15/10 clean/embedded/truncated/absent split is applied in a
 single later pass over the assembled batch (`generator/finalize.py`),
 because the split is a property of the batch as a whole and cannot be
 allocated correctly one population at a time. A batch that is generated
@@ -40,15 +39,15 @@ BANK_REF_NO_PRESENT_PERCENT = 60
 
 Applied identically to every line in the batch — settlement credit, orphan
 case, and noise alike — so that whether the column is populated carries no
-scenario signal. §3.1 calls the field a "secondary matching signal
-alongside narration-embedded UTR" and §4.6 tier 0 reads it, so leaving it
-null everywhere (as session 2.2 did) left that branch of the cascade dead.
+scenario signal. It is a secondary matching signal alongside the
+narration-embedded UTR, and the matcher's first tier reads it, so leaving
+it null everywhere would leave that branch of the cascade dead.
 """
 
 SETTLEMENT_CREDIT_LAG_MAX_DAYS = 1
 """Calendar days a landed settlement credit may trail the settlement's own date.
 
-Well inside the T+2 working-day window (§3.3), which is what makes these
+Well inside the T+2 working-day window, which is what makes these
 the *landed* population rather than a timing case.
 """
 
@@ -58,7 +57,7 @@ def bank_line_id(rng: random.Random) -> str:
 
 
 def random_bank_profile(rng: random.Random) -> BankProfile:
-    """A bank format profile tag only (§3.1: "not a COA dimension"). Uniform choice — no stated weighting."""
+    """A bank format profile tag only, not a chart-of-accounts dimension. Uniform choice — no stated weighting."""
     return rng.choice(_BANK_PROFILES)
 
 
@@ -68,7 +67,7 @@ def random_closing_balance(rng: random.Random) -> Paise:
     No running-balance continuity across lines is modeled: nothing in any
     checkpoint reads `closing_balance_paise` beyond it being a valid
     `NonNegPaise`, and continuity would depend on a chronological line
-    order that the global shuffle pass (§3.5) deliberately scrambles.
+    order that the global shuffle pass deliberately scrambles.
     """
     return Paise(rng.randint(1_00_000_00, 50_00_000_00))
 
@@ -105,9 +104,9 @@ def settlement_credit_bank_line(rng: random.Random, *, value_date: date, amount:
     """A landed bank credit for a settlement.
 
     Written with a clean, full UTR (or none at all when the settlement
-    carries none — `SETTLEMENT_UTR_MISSING`, §3.3's "no bank-side anchor
-    exists"); `generator/finalize.py` reshapes a planned share of these
-    into the embedded, truncated and absent forms §4.6 requires.
+    carries none — `SETTLEMENT_UTR_MISSING`, where no bank-side anchor
+    exists); `generator/finalize.py` reshapes a planned share of these
+    into the embedded, truncated and absent forms the matcher must handle.
     """
     shape = UtrShape.ABSENT if not utr else UtrShape.CLEAN
     return new_bank_line(
@@ -129,7 +128,7 @@ def add_settlement_credit(
 ) -> BankLine:
     """Land `settlement`'s bank credit into `batch` and record the link for the finalize pass.
 
-    Every settlement-anchored population outside REV-17's 27 no-credit
+    Every settlement-anchored population outside the 27 no-credit
     cases (family 4 core, family-4 no-op, `BANK_CREDIT_OVERDUE`) routes
     through here, so the credit's date, amount, narration and profile are
     drawn the same way for all of them.
@@ -137,7 +136,7 @@ def add_settlement_credit(
     `amount` overrides `settlement.amount` for the one population where
     the two legitimately differ: `SETTLEMENT_AMOUNT_MISMATCH`, where the
     bank credits the true recon-line total and the settlement *header* is
-    the wrong record (§3.3).
+    the wrong record.
 
     The value date never runs past `snapshot_date`: a bank statement drawn
     as of the snapshot cannot contain a line dated after it, and

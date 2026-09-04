@@ -211,6 +211,7 @@ def run_reconciliation(
         ground_truth,
         arm=classifier_arm.arm_name,
         bank_line_accounting=result.bank_accounting,
+        attachment=result.attachment,
         seed=seed,
         provenance=provenance,
     )

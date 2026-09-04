@@ -24,3 +24,10 @@ ledger.db
 # visual-check sidecars are large build products. The README ships the rendered
 # PNGs from assets/diagrams/ instead.
 /docs/diagrams/
+
+# Working documents that drove the build, kept locally as evidence but not
+# part of what the repository presents: the standing brief each coding session
+# opened with, the append-only session log, and the pitch-video script.
+/docs/AGENT.md
+/docs/BUILDLOG.md
+/PITCH.md

@@ -1,19 +1,19 @@
-"""Clean-case generator, per spec.md §3.5 ("Record shape") and Phase 1's scope.
+"""Clean-case generator, covering Phase 1's scope.
 
-Phase 1 (spec.md §6, session 1.3) builds the **clean-case path only** — no
-anomaly injection. That population is the "Fully clean" row of the §3.5
+Phase 1 (session 1.3) builds the **clean-case path only** — no
+anomaly injection. That population is the "Fully clean" row of the
 case-allocation table: `NONE` exception class, `AUTO_MATCHED` state, no
 correction required. Every payment generated here is booked to the
-merchant ledger exactly as accrual-basis bookkeeping (§3.0) requires, so
+merchant ledger exactly as accrual-basis bookkeeping requires, so
 nothing is missing, mis-posted, or mis-timed for the model to find.
 
 Refunds, adjustments, and bank-statement lines are deliberately out of
-scope for this module. §3.5's refund/adjustment volumes and §3.6's orphan
+scope for this module. The refund/adjustment volumes and the orphan
 population describe the *full* 150-case reference batch; injecting them
 correctly requires the anomaly machinery (families 1-5, exception
 subtypes) that Phase 2 sessions 2.1-2.2 build. Building a "correctly
 booked refund" here would invent that machinery's shape ahead of time
-without a spec'd definition of what a clean-refund posting looks like
+without a definition of what a clean-refund posting looks like
 beyond family 2's anomaly template — see BUILDLOG.md session 1.3, Decided.
 
 Only one RNG instance is threaded through (no unseeded `random`, no second
@@ -45,16 +45,16 @@ from pipeline.schemas import (
     SettlementStatus,
 )
 
-# §3.5 "Record shape": payments per settlement, truncated lognormal.
+# Payments per settlement: truncated lognormal, so a few large settlements
+# sit in a long tail.
 PAYMENTS_PER_SETTLEMENT_MU = math.log(10)
 PAYMENTS_PER_SETTLEMENT_SIGMA = 0.5
 PAYMENTS_PER_SETTLEMENT_MIN = 3
 PAYMENTS_PER_SETTLEMENT_MAX = 25
 
-# §3.5 "Money": lognormal, roughly ₹100-₹50,000, median near ₹1,500.
-# Spec states the distribution shape and range but not sigma; chosen as
-# generator config (§3.5's own framing: "a parameter change rather than a
-# rewrite"), logged in BUILDLOG.md session 1.3, Decided.
+# Payment amount: lognormal, roughly ₹100-₹50,000, median near ₹1,500.
+# The distribution shape and range are fixed but sigma is a tunable
+# generator config, logged in BUILDLOG.md session 1.3, Decided.
 PAYMENT_AMOUNT_MU = math.log(1500)
 PAYMENT_AMOUNT_SIGMA = 0.8
 PAYMENT_AMOUNT_MIN_RUPEES = 100
@@ -63,7 +63,7 @@ PAYMENT_AMOUNT_MAX_RUPEES = 50_000
 FEE_PERCENT = Decimal("2")
 GST_ON_FEE_PERCENT = Decimal("18")
 
-# §3.2's chart of accounts is defined once, pipeline-side
+# The chart of accounts is defined once, pipeline-side
 # (`pipeline/accounts.py`), and re-exported here under the names session 1.3
 # introduced so that the side that writes a code and the side that grades it
 # cannot drift apart. Same reasoning as `pipeline/timing.py` (session 3.3).
@@ -73,7 +73,7 @@ ACCOUNT_SALES_REVENUE = accounts.ACCOUNT_SALES_REVENUE
 ACCOUNT_PAYMENT_GATEWAY_CHARGES = accounts.ACCOUNT_PAYMENT_GATEWAY_CHARGES
 ACCOUNT_GST_ON_GATEWAY_CHARGES = accounts.ACCOUNT_GST_ON_GATEWAY_CHARGES
 
-_PAYMENT_METHODS = PAYMENT_METHODS  # moved to generator/narration.py, the one shared text pool (§3.5)
+_PAYMENT_METHODS = PAYMENT_METHODS  # moved to generator/narration.py, the one shared text pool
 
 SETTLEMENT_MAX_DAYS_BACK = 10
 """Oldest a settlement may be, in calendar days before the batch snapshot.
@@ -83,24 +83,25 @@ included as day 0. Session 2.2 drew 1..10 here while the two
 window-anchored populations (family-4 no-op, `BANK_CREDIT_OVERDUE`) placed
 their settlements by working-day arithmetic from the snapshot, which left
 "created on the snapshot date" belonging to exactly one population — a
-timestamp block of the kind §3.5's fingerprint control forbids.
+timestamp block that would let a model fingerprint the case by structure
+alone, rather than by evidence.
 """
 
 
 class PostingVariant(Enum):
-    """How a payment's ledger legs are booked, keyed to the §3.2 families.
+    """How a payment's ledger legs are booked, keyed to the anomaly families.
 
     The `recon_line` (Razorpay's own evidence) is identical across variants
     — it always reports what actually happened. Only the merchant's ledger
     legs vary, because these variants model *bookkeeping errors*, not
-    different underlying transactions. Session 2.1 (§3.5/§3.4).
+    different underlying transactions. Session 2.1.
     """
 
     CLEAN = "clean"
     UNPOSTED_FEE_GROSS_CLEARING = "unposted_fee_gross_clearing"
     """Family 1 (T-01): fee/GST never posted; Clearing debited at gross
     (the only way `Dr Clearing / Cr Sales Revenue` balances without the
-    expense legs) — matches T-01's evidence predicate (§3.4, REV-16):
+    expense legs) — matches T-01's evidence predicate:
     a `Sales Revenue` credit equal to gross `amount`."""
 
     NET_REVENUE = "net_revenue"
@@ -111,7 +112,7 @@ class PostingVariant(Enum):
     BANK_MISPOST = "bank_mispost"
     """Family 4 (T-04): fee/GST posted correctly, but the net leg lands on
     `Bank Account` instead of `Razorpay Clearing` — a premature bank debit
-    before cash actually arrives (§3.2's family-4 wrong-account error)."""
+    before cash actually arrives (family 4's wrong-account error)."""
 
 
 CleanBatch = GeneratedBatch  # one container for every population (generator/batch.py)
@@ -128,8 +129,8 @@ def _snapshot_unix_ts(snapshot_date: date) -> int:
 def settlement_created_timestamp(rng: random.Random, created_date: date) -> int:
     """A settlement's `created_at`: midnight UTC on `created_date` plus a random time of day.
 
-    The intraday offset exists for one reason and it is a §3.5 fingerprint
-    control, not realism: session 2.2's window-anchored populations sat at
+    The intraday offset exists for one reason, and it is not realism: it
+    avoids a fingerprint. Session 2.2's window-anchored populations sat at
     exactly midnight UTC while every other population carried an arbitrary
     offset, so `created_at % 86400 == 0` picked out seventeen cases from
     two named populations with no reference to any evidence.
@@ -219,11 +220,11 @@ def _generate_payment(
     else:
         raise ValueError(f"unhandled posting variant: {posting}")
 
-    # One shared pool, drawn identically for every posting variant (§3.5's
-    # fingerprint control). The narration names neither the anomaly nor any
-    # amount: session 2.2's text announced both, which made every family
-    # trivially separable by string match and put a second, redundant copy
-    # of the evidence into free text.
+    # One shared pool, drawn identically for every posting variant so no
+    # family carries a narration fingerprint. The narration names neither
+    # the anomaly nor any amount: session 2.2's text announced both, which
+    # made every family trivially separable by string match and put a
+    # second, redundant copy of the evidence into free text.
     narration = ledger_narration(rng, method=recon_line.method)
 
     ledger_entries = [
@@ -284,12 +285,12 @@ def _generate_settlement(
 
 
 def generate_clean_batch(rng: random.Random, snapshot_date: date, n_settlements: int = 18) -> CleanBatch:
-    """Generate `n_settlements` fully-clean settlements (§3.5's "Fully clean", n=18).
+    """Generate `n_settlements` fully-clean settlements ("Fully clean", n=18).
 
     Every payment is booked as `Dr Razorpay Clearing (net), Dr Payment
     Gateway Charges (fee), Dr GST on Gateway Charges (tax) / Cr Sales
-    Revenue (gross)` — the correct accrual-basis entry (§3.0, and the
-    "Correct entry" worked example under family 3, §3.2) — so every case
+    Revenue (gross)` — the correct accrual-basis entry (matching the
+    "Correct entry" worked example under family 3) — so every case
     is `NONE` / `AUTO_MATCHED` by construction: nothing is omitted,
     mis-posted, or mis-timed.
     """
@@ -301,7 +302,7 @@ def generate_clean_batch(rng: random.Random, snapshot_date: date, n_settlements:
         batch.ledger_entries.extend(ledger_entries)
 
         # Every "Fully clean" settlement lands a matching bank credit — it
-        # is not one of the 27 REV-17 no-credit populations.
+        # is not one of the 27 no-credit populations.
         add_settlement_credit(batch, rng, settlement=settlement, snapshot_date=snapshot_date)
 
         batch.ground_truth.append(

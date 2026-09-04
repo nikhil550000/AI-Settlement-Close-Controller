@@ -1,13 +1,13 @@
 """`uv run generate` — the generator's CLI entry point (AGENT.md command surface).
 
 Phase 1 (session 1.3) wired up the clean-case path. Session 2.1 added the
-five FR-04 family injections. Session 2.2 added the remaining §3.5
+five family injections. Session 2.2 added the remaining
 settlement-anchored populations (`generator/exceptions.py`) and the four
-§3.6 orphan populations plus non-settlement noise
+orphan populations plus non-settlement noise
 (`generator/orphans.py`) — the full 150-case reference batch. Session 2.3
 adds the step between generating those populations and writing them out:
 `generator/finalize.py`'s single global pass over the assembled batch
-(§3.5's fingerprint control, §4.6's UTR narration variety). Nothing is
+(the fingerprint control and the UTR narration variety). Nothing is
 written to disk that has not been through it.
 
 The snapshot date defaults to a literal constant (Phase 1's own day,
@@ -37,7 +37,7 @@ app = typer.Typer(add_completion=False)
 DEFAULT_SNAPSHOT_DATE = date(2026, 8, 28)
 
 CLEAN_POPULATION = "fully_clean"
-"""§3.5's first case-allocation row, the one population without its own module."""
+"""The first case-allocation row, the one population without its own module."""
 
 
 @app.command()
@@ -47,9 +47,9 @@ def generate(
         DEFAULT_SNAPSHOT_DATE.isoformat(),
         help="Batch snapshot date, ISO 8601 (YYYY-MM-DD). Never derived from wall-clock time.",
     ),
-    n_settlements: int = typer.Option(18, help='Count of "Fully clean" settlements (spec.md §3.5).'),
+    n_settlements: int = typer.Option(18, help='Count of "Fully clean" settlements.'),
     n_cases_per_family: int = typer.Option(
-        N_CASES_PER_FAMILY, help="Cases per FR-04 family (spec.md §3.5 case-allocation table: 10)."
+        N_CASES_PER_FAMILY, help="Cases per anomaly family (case-allocation table: 10)."
     ),
     out_dir: Path = typer.Option(Path("scratch/generated"), help="Output directory for JSONL files."),
 ) -> None:
@@ -84,7 +84,7 @@ def generate_reference_batch(
     n_settlements: int = 18,
     n_cases_per_family: int = N_CASES_PER_FAMILY,
 ) -> FinalBatch:
-    """The whole batch: every §3.5/§3.6 population, then the §3.5 global pass over all of it.
+    """The whole batch: every settlement-anchored and orphan population, then the global pass over all of it.
 
     One function so that the checkpoint tests assemble the batch exactly
     as the command does — a fingerprint assertion against a

@@ -1,26 +1,25 @@
-"""FR-04 family injections (families 1-5), per spec.md §3.2/§3.3/§3.4/§3.5.
+"""Family injections (families 1-5).
 
-Session 2.1 builds exactly the five FR-04 families at 10 cases each — the
-§3.5 case-allocation rows for families 1 through 5, family 4's *core*
+Session 2.1 builds exactly the five families at 10 cases each — the
+case-allocation rows for families 1 through 5, family 4's *core*
 variant only. The family-4 date-error variant (precondition: the bank
 credit already landed) and the family-4 no-op (lag within the settlement
 window) are different populations with different preconditions and
 `bank_line` evidence that doesn't exist until later sessions; they belong
-to session 2.2 alongside the exception/tax/ambiguous/orphan populations
-(§6.3's session table).
+to session 2.2 alongside the exception/tax/ambiguous/orphan populations.
 
 Each case is one settlement (`case_id == settlement.id`, "125
-settlement-anchored" per §3.5). A case's anomaly — one payment posted via a
+settlement-anchored" in total). A case's anomaly — one payment posted via a
 non-CLEAN `PostingVariant` (families 1, 3, 4), or one extra refund/adjustment
 recon line with no ledger legs (families 2, 5) — sits among otherwise-clean
 payments, matching "a settlement case rolls up roughly eleven payments"
-(§3.4, Aggregation) and keeping each family's evidence predicate (§3.4)
+and keeping each family's evidence predicate
 satisfied by exactly one entity per case, with no cross-family
-contamination (generalizing §3.2's family-4 "fee-clean" requirement to
+contamination (generalizing family 4's "fee-clean" requirement to
 every family).
 
 Labels come from the injection plan, never re-derived from generated
-records (§3.5, Label emission): each case builder constructs the
+records: each case builder constructs the
 `GroundTruthCase` from the same values used to build the anomalous
 record(s), not by inspecting the batch afterward.
 """
@@ -70,12 +69,12 @@ from pipeline.schemas import (
     SettlementStatus,
 )
 
-# §3.2's two accounts not already re-exported by generator/clean.py; the
+# Two accounts not already re-exported by generator/clean.py; the
 # definitions themselves live in `pipeline/accounts.py`.
 ACCOUNT_SALES_RETURNS_AND_ALLOWANCES = accounts.ACCOUNT_SALES_RETURNS_AND_ALLOWANCES
 ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS = accounts.ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS
 
-N_CASES_PER_FAMILY = 10  # §3.5 case-allocation table: every FR-04 family holds 10 cases.
+N_CASES_PER_FAMILY = 10  # Case-allocation table: every family holds 10 cases.
 
 
 FamilyBatch = GeneratedBatch  # one container for every population (generator/batch.py)
@@ -102,7 +101,7 @@ def _n_payments(rng: random.Random) -> int:
 def _finalize_settlement(
     settlement_id: str, utr: str, settlement_created_at: int, recon_lines: list[ReconLine]
 ) -> Settlement:
-    """§3.5's hard invariant: `amount == sum(credits) - sum(debits) - fees - tax`.
+    """The hard invariant: `amount == sum(credits) - sum(debits) - fees - tax`.
 
     Computed purely from `recon_lines` — Razorpay's own evidence — never
     from what the merchant's ledger says, since that's exactly what these
@@ -181,17 +180,17 @@ def _generate_misposted_case(
 
 
 def _t01_correction_legs(recon_line: ReconLine, _ledger_entries: list[LedgerEntry]) -> tuple[ExpectedJournalLeg, ...]:
-    """T-01: `Dr Payment Gateway Charges, Dr GST on Gateway Charges / Cr Razorpay Clearing` (§3.4)."""
+    """T-01: `Dr Payment Gateway Charges, Dr GST on Gateway Charges / Cr Razorpay Clearing`."""
     fee, tax = recon_line.fee, recon_line.tax
     legs = [_account_leg(ACCOUNT_PAYMENT_GATEWAY_CHARGES, fee, Paise(0))]
-    if tax > 0:  # §3.4 "Zero-amount legs are omitted, not posted."
+    if tax > 0:  # Zero-amount legs are omitted, not posted.
         legs.append(_account_leg(ACCOUNT_GST_ON_GATEWAY_CHARGES, tax, Paise(0)))
     legs.append(_account_leg(ACCOUNT_RAZORPAY_CLEARING, Paise(0), Paise(fee + tax)))
     return tuple(legs)
 
 
 def _t03_correction_legs(recon_line: ReconLine, _ledger_entries: list[LedgerEntry]) -> tuple[ExpectedJournalLeg, ...]:
-    """T-03: `Dr Payment Gateway Charges, Dr GST on Gateway Charges / Cr Sales Revenue` (§3.4)."""
+    """T-03: `Dr Payment Gateway Charges, Dr GST on Gateway Charges / Cr Sales Revenue`."""
     fee, tax = recon_line.fee, recon_line.tax
     legs = [_account_leg(ACCOUNT_PAYMENT_GATEWAY_CHARGES, fee, Paise(0))]
     if tax > 0:
@@ -201,7 +200,7 @@ def _t03_correction_legs(recon_line: ReconLine, _ledger_entries: list[LedgerEntr
 
 
 def _t04_correction_legs(_recon_line: ReconLine, ledger_entries: list[LedgerEntry]) -> tuple[ExpectedJournalLeg, ...]:
-    """T-04: `Dr Razorpay Clearing / Cr Bank Account`, amount = the ledger's premature debit (§3.4)."""
+    """T-04: `Dr Razorpay Clearing / Cr Bank Account`, amount = the ledger's premature debit."""
     bank_leg = next(je for je in ledger_entries if je.account_code == ACCOUNT_BANK_ACCOUNT[0])
     net = bank_leg.debit
     return (
@@ -254,8 +253,8 @@ def generate_family_4_batch(rng: random.Random, snapshot_date: date, n_cases: in
     """Family 4 (core variant) — premature bank debit, credit not landed.
 
     `ACCOUNTING_CORRECTION`/`MISPOSTING`, `AUTO_CLOSED`, `T-04`. The
-    precondition "no `bank_line` credit matching the settlement" (§3.2)
-    is enforced explicitly: this is one of REV-17's 27 no-credit
+    precondition "no `bank_line` credit matching the settlement"
+    is enforced explicitly: this is one of the 27 no-credit
     populations (family 4 core, family-4 no-op, `BANK_CREDIT_OVERDUE`),
     so `add_settlement_credit` is deliberately never
     called here — every other settlement-anchored population does call it.
@@ -327,10 +326,10 @@ def _generate_extra_line_case(
 def _build_refund_line(
     rng: random.Random, settlement_id: str, utr: str, settlement_created_at: int, recon_lines: list[ReconLine]
 ) -> ReconLine:
-    """§3.2 family 2: a settled refund of a parent payment's full gross amount.
+    """Family 2: a settled refund of a parent payment's full gross amount.
 
     Fee/tax are zero on the assumption that Razorpay's MDR fee is
-    non-refundable (§3.2's family-2 assumption note).
+    non-refundable (family-2 assumption note).
     """
     parent_payment = rng.choice(recon_lines)
     refund_amount = parent_payment.amount
@@ -348,7 +347,7 @@ def _build_refund_line(
         settled_at=settlement_created_at,
         settlement_id=settlement_id,
         settlement_utr=utr,
-        payment_id=parent_payment.entity_id,  # §3.1: payment_id links a refund to its parent payment.
+        payment_id=parent_payment.entity_id,  # payment_id links a refund to its parent payment.
         order_id=parent_payment.order_id,
         posted_at=None,
         credit_type="default",
@@ -359,7 +358,7 @@ def _build_refund_line(
 
 
 def _t02_correction_legs(refund_line: ReconLine) -> tuple[ExpectedJournalLeg, ...]:
-    """T-02: `Dr Sales Returns and Allowances / Cr Razorpay Clearing`, amount = `recon_line.debit` (§3.4)."""
+    """T-02: `Dr Sales Returns and Allowances / Cr Razorpay Clearing`, amount = `recon_line.debit`."""
     amount = refund_line.debit
     return (
         _account_leg(ACCOUNT_SALES_RETURNS_AND_ALLOWANCES, amount, Paise(0)),
@@ -397,9 +396,9 @@ def build_adjustment_line(
     *,
     description: str | None = None,
 ) -> ReconLine:
-    """§3.2 family 5: a Razorpay-side settlement adjustment, credit or debit, with no merchant-ledger entry.
+    """Family 5: a Razorpay-side settlement adjustment, credit or debit, with no merchant-ledger entry.
 
-    Per REV-14, adjustment rows carry null `payment_id` **and** null
+    Adjustment rows carry null `payment_id` **and** null
     `settlement_utr` even though `settlement_id` is populated — the sample
     adjustment payload has no UTR anchor, so family 5 assembles on
     `settlement_id` alone.
@@ -410,14 +409,14 @@ def build_adjustment_line(
     and Razorpay would not apply a settlement-side deduction larger than
     the settlement itself.
 
-    `description` carries FR-06's tax signature when the caller is the
+    `description` carries the tax signature when the caller is the
     tax-position population — structurally the identical "unposted
-    adjustment" shape per spec.md §4.2's Slot-C note ("a 194-O deduction
-    has a signature in the adjustment line") — and otherwise a neutral
-    description from the shared pool. Family 5 left the field `None` in
-    session 2.2, which made *having* a description the FR-06 tell rather
-    than what it said; §4.2 fixes the signature's content as the detection
-    surface, so every adjustment row now carries one.
+    adjustment" shape ("a 194-O deduction has a signature in the
+    adjustment line") — and otherwise a neutral description from the
+    shared pool. Family 5 left the field `None` in session 2.2, which
+    made *having* a description the tell rather than what it said; the
+    signature's content is now fixed as the detection surface, so every
+    adjustment row carries one.
     """
     is_credit = rng.random() < 0.5
     if is_credit:
@@ -456,7 +455,7 @@ def build_adjustment_line(
 
 
 def _t05_t06_correction_legs(adj_line: ReconLine) -> tuple[ExpectedJournalLeg, ...]:
-    """T-05 (credit adjustment) / T-06 (debit adjustment), direction from which of debit/credit is non-zero (§3.4)."""
+    """T-05 (credit adjustment) / T-06 (debit adjustment), direction from which of debit/credit is non-zero."""
     if adj_line.credit > 0:
         amount = adj_line.credit
         return (
@@ -498,7 +497,7 @@ FAMILY_POPULATIONS = (
     ("family_4", generate_family_4_batch),
     ("family_5", generate_family_5_batch),
 )
-"""The five FR-04 families in generation order, named.
+"""The five anomaly families in generation order, named.
 
 One list, read both by `generate_all_family_batches` and by the batch
 assembly in `generator/cli.py`, so the RNG draw order cannot differ
@@ -510,7 +509,7 @@ drift out of step with the batch they label.
 def generate_all_family_batches(
     rng: random.Random, snapshot_date: date, n_cases_per_family: int = N_CASES_PER_FAMILY
 ) -> FamilyBatch:
-    """All five FR-04 families, 10 cases each by default — session 2.1's full checkpoint population."""
+    """All five families, 10 cases each by default — session 2.1's full checkpoint population."""
     combined = FamilyBatch()
     for _name, generate in FAMILY_POPULATIONS:
         combined.extend(generate(rng, snapshot_date, n_cases_per_family))

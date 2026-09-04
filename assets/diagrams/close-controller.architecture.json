@@ -4,7 +4,7 @@
   "meta": {
     "title": "AI Settlement Close Controller",
     "quality_profile": "showcase",
-    "viewBox": [1370, 600],
+    "viewBox": [1600, 600],
     "repository": {
       "url": "https://github.com/nikhil550000/AI-Settlement-Close-Controller",
       "revision": "a138d5707562452e09d903adf0764afe564eb3cb"
@@ -23,6 +23,7 @@
     { "id": "predicates", "type": "backend", "label": "4 · Predicates", "sublabel": "six exclusive tests", "pos": [1065, 40], "size": [165, 88], "sources": [{ "path": "pipeline/predicates.py" }] },
 
     { "id": "semantics", "type": "cloud", "label": "S · Semantics", "sublabel": "six free-text reads — keyword or LLM arm", "tag": "a dependency, not a stage", "pos": [300, 185], "size": [420, 96], "sources": [{ "path": "pipeline/semantics.py", "line": 162, "label": "NarrationSemantics" }] },
+    { "id": "policy", "type": "security", "label": "Policy gate", "sublabel": "§2.5 FR-06 exclusions", "tag": "consulted by 8 · assigned no component", "pos": [1345, 185], "size": [165, 96], "sources": [{ "path": "pipeline/policy.py", "label": "evaluate_policy" }] },
     { "id": "caches", "type": "database", "label": "Prompt caches", "sublabel": "SHA-256 keyed, committed", "tag": "STRICT: no network path", "pos": [1065, 185], "size": [165, 96], "sources": [{ "path": "pipeline/llm_cache.py" }] },
 
     { "id": "apply", "type": "backend", "label": "8 · Apply", "sublabel": "idempotent write · recheck", "tag": "five terminal states", "pos": [300, 340], "size": [165, 88], "sources": [{ "path": "pipeline/apply.py", "label": "assign_state" }, { "path": "pipeline/reconciliation.py" }] },
@@ -32,7 +33,8 @@
 
     { "id": "ledger", "type": "database", "label": "SQLite ledger", "sublabel": "idempotency in the schema", "tag": "one row per posted leg", "pos": [300, 485], "size": [165, 88], "sources": [{ "path": "pipeline/storage.py" }] },
     { "id": "reporter", "type": "frontend", "label": "9 · Reporter", "sublabel": "metrics · matrices · report", "tag": "report.html + metrics.json", "pos": [555, 485], "size": [165, 88], "sources": [{ "path": "pipeline/metrics.py" }, { "path": "pipeline/eval_report.py" }, { "path": "pipeline/report.py" }] },
-    { "id": "groundtruth", "type": "database", "label": "ground_truth.jsonl", "sublabel": "evaluation-only", "tag": "never read by pipeline/", "pos": [810, 485], "size": [165, 88], "sources": [{ "path": "pipeline/ground_truth.py" }] }
+    { "id": "groundtruth", "type": "database", "label": "ground_truth.jsonl", "sublabel": "evaluation-only", "tag": "never read by pipeline/", "pos": [810, 485], "size": [165, 88], "sources": [{ "path": "pipeline/ground_truth.py" }] },
+    { "id": "bankacct", "type": "frontend", "label": "A · Bank-line accounting", "sublabel": "every line, one disposition", "tag": "partition proof, not a §1.6 metric", "pos": [1065, 485], "size": [165, 88], "sources": [{ "path": "pipeline/bank_accounting.py", "label": "account_bank_lines" }] }
   ],
   "connections": [
     { "id": "disk-to-adapters", "from": "sources", "to": "adapters", "variant": "emphasis" },
@@ -49,17 +51,24 @@
     { "id": "sem-predicates", "from": "semantics", "to": "predicates", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
     { "id": "sem-classifier", "from": "semantics", "to": "classifier", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
     { "id": "sem-apply", "from": "semantics", "to": "apply", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "sem-policy", "from": "semantics", "to": "policy", "variant": "dashed" },
+    { "id": "sem-bankacct", "from": "semantics", "to": "bankacct", "variant": "dashed" },
     { "id": "cache-sem", "from": "caches", "to": "semantics", "label": "hit or fallback", "variant": "dashed", "fromSide": "left", "toSide": "right" },
     { "id": "cache-classifier", "from": "caches", "to": "classifier", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+
+    { "id": "policy-to-apply", "from": "policy", "to": "apply", "label": "excludes", "variant": "dashed" },
+
+    { "id": "matcher-to-bankacct", "from": "matcher", "to": "bankacct", "label": "matched cases", "variant": "default" },
 
     { "id": "apply-to-ledger", "from": "apply", "to": "ledger", "label": "post once", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelAt": [330, 460] },
     { "id": "apply-to-reporter", "from": "apply", "to": "reporter", "label": "terminal state", "fromSide": "bottom", "toSide": "top" },
     { "id": "ledger-to-reporter", "from": "ledger", "to": "reporter", "label": "posted legs", "fromSide": "right", "toSide": "left" },
-    { "id": "gt-to-reporter", "from": "groundtruth", "to": "reporter", "label": "graded against", "fromSide": "left", "toSide": "right" }
+    { "id": "gt-to-reporter", "from": "groundtruth", "to": "reporter", "label": "graded against", "fromSide": "left", "toSide": "right" },
+    { "id": "bankacct-to-reporter", "from": "bankacct", "to": "reporter", "label": "dispositions", "variant": "default" }
   ],
   "cards": [
     { "dot": "cyan", "title": "Deterministic spine", "items": ["run_batch composes components 2 to 8 into one call", "generator/ reaches the pipeline only through disk", "Money is int paise wherever a decision depends on it"] },
-    { "dot": "amber", "title": "Model-touching arms", "items": ["Semantics threads into components 2, 3, 4, 5 and 8", "Contested credits are the one read on the money path", "Neither arm originates an account, amount or narration"] },
+    { "dot": "amber", "title": "Model-touching arms", "items": ["Semantics threads into 2, 3, 4, 5, 8, policy and bank-line accounting — seven consumers", "Contested credits are the one read on the money path", "Neither arm originates an account, amount or narration"] },
     { "dot": "emerald", "title": "Verification", "items": ["Template allowlist checked twice, transcribed not derived", "UNIQUE(case_id, resolution_id, account_code) is idempotency", "Every bank line lands in exactly one disposition"] }
   ]
 }

@@ -698,6 +698,50 @@ is over auto-applied entries, so the two are not complements of one another (§1
 </section>
 {% endif %}
 
+{% if m.attachment and m.attachment.total_attached %}
+{% set att = m.attachment %}
+<section id="attachment">
+  <h2>7. What each matched credit rests on</h2>
+  <p class="section-note">Every metric above compares terminal <em>states</em>. A settlement
+  that attached the <em>wrong</em> bank credit still reports clean, as long as the amount
+  struck its residual to zero &mdash; so a perfect <code>false_match_rate</code> is a
+  statement about labels, not about evidence. This table is denominated in evidence. Each of
+  the {{ att.total_attached }} credits the matcher attached to a settlement is classified
+  once, and <code>names another settlement</code> must always be empty.</p>
+
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>evidence</th><th>credits</th><th>what it means</th></tr></thead>
+    <tbody>
+    {% for key, label, meaning in attachment_evidence_rows %}
+      <tr{% if key == "contradicted" and att.counts[key] %} class="unaccounted"{% endif %}>
+        <td>{{ label }}</td>
+        <td>{{ att.counts[key] }}</td>
+        <td>{{ meaning }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <p class="section-note">The first two rows are the same comparison tiers 0 and 1 already
+  made, so they corroborate themselves and are reported for the split rather than as proof.
+  The honest number is <strong>{{ att.counts["amount_window_only"] }} of
+  {{ att.total_attached }}</strong>: attachments the committed records can neither confirm
+  nor refute, because the credit carries no reference token and only the amount and the dates
+  line up.</p>
+
+  {% if att.contradictions %}
+  <p class="section-note unaccounted"><strong>{{ att.contradictions | length }} credit(s)
+  attached to a settlement whose own text names a different one.</strong> This is a false
+  match no case-denominated metric can see:
+  {% for c in att.contradictions %}<code>{{ c.line_id }}</code> &rarr;
+  {{ c.attached_to_case_id }} (tier {{ c.match_tier }}), named by
+  {{ c.named_settlement_ids | join(", ") }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 </main>
 
 <footer class="report-footer">
@@ -795,6 +839,19 @@ def _render_validations_html(validations: Sequence[ValidationReport]) -> str:
     return f'<strong>validations:</strong><ul>{"".join(items)}</ul>'
 
 
+ATTACHMENT_EVIDENCE_ROWS: tuple[tuple[str, str, str], ...] = (
+    ("utr_exact", "names the UTR", "the credit carries this settlement's UTR outright"),
+    ("utr_prefix", "names a UTR prefix", "it carries a truncated but unambiguous form of it"),
+    ("amount_window_only", "amount and window only", "nothing in the record identifies the settlement"),
+    ("contradicted", "names another settlement", "the credit carries a different settlement's UTR"),
+)
+"""Row order and prose for the attachment table, keyed by `AttachmentEvidence`.
+
+Same reason as `BANK_DISPOSITION_ROWS`: an evidence class added to the enum and
+forgotten here raises at render time rather than disappearing from the report.
+"""
+
+
 BANK_DISPOSITION_ROWS: tuple[tuple[str, str, str], ...] = (
     ("settlement_evidence", "settlement evidence", "matched to a settlement by FR-09's cascade"),
     ("orphan_evidence", "orphan evidence", "evidence on an orphan case (§1.2, §3.6)"),
@@ -864,6 +921,7 @@ def render_report_html(context: ReportContext) -> str:
         no_action_count=no_action_count,
         auto_resolved_count=auto_resolved_count,
         bank_disposition_rows=BANK_DISPOSITION_ROWS,
+        attachment_evidence_rows=ATTACHMENT_EVIDENCE_ROWS,
         total_cases=total_cases,
         external_action_share=(external_action_count / total_cases) if total_cases else 0.0,
         no_action_share=(no_action_count / total_cases) if total_cases else 0.0,

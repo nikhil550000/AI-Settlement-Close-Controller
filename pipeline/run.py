@@ -32,6 +32,7 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict
 
 from pipeline.apply import BatchOutcome, CaseOutcome, apply_batch, seed_ledger
+from pipeline.attachment import AttachmentAudit, audit_attachments
 from pipeline.bank_accounting import BankLineAccounting, account_bank_lines
 from pipeline.case_assembly import Case, assemble_cases
 from pipeline.classifier import ClassificationResult, EvidenceBundle, build_evidence_bundles
@@ -105,6 +106,13 @@ class RunResult(BaseModel):
     """Component 5's per-case output, when `run_batch` was given a `classifier`.
     Empty when it was not — the same "no classifier, no change" rule `apply_batch`
     follows for its own `classifications` parameter."""
+    attachment: AttachmentAudit
+    """What each attached credit rests on (`pipeline.attachment`). Computed
+    alongside the partition and for the same reason: this is the one place
+    holding both the matched cases and the settlements they were matched
+    against, and the audit is only meaningful if it reads the attachments the
+    run actually made rather than a second pass that could disagree."""
+
     bank_accounting: BankLineAccounting
     """Where every bank line went (`pipeline.bank_accounting`). Computed here
     because this is the one place that holds both the matched cases and the raw
@@ -191,4 +199,5 @@ def run_batch(
         outcome=outcome,
         classifications=classifications,
         bank_accounting=account_bank_lines(bank_lines, cases, semantics=semantics),
+        attachment=audit_attachments(cases, settlements),
     )

@@ -59,7 +59,7 @@ def write_bank_statement(records: list[BankLine], *, profile: str, path: str | P
 
     File format is chosen by `path`'s suffix — `.xlsx` or anything else
     (`.csv`) — the same rule the adapter's `_read_grid` uses to read it
-    back, per §2.6's "CSV and XLSX only."
+    back. Only CSV and XLSX are supported.
     """
     config = load_profile(profile)
     path = Path(path)

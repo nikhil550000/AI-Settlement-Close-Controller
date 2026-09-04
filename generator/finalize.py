@@ -1,14 +1,14 @@
-"""The global pass, per spec.md §3.5's fingerprint control and §4.6's
-generator obligation.
+"""The global pass: the fingerprint control and the generator's narration
+variety obligation.
 
 > **Mitigation:** generate all records first, then assign IDs and
 > timestamps in a single global shuffled pass, and draw narration text
-> from one shared pool regardless of scenario. *(§3.5)*
+> from one shared pool regardless of scenario.
 
 Every population generator builds its own cases in its own loop, which is
 the right shape for getting each case *right* and exactly the wrong shape
 for what the batch looks like from outside: records leave those loops in
-scenario order, and the §4.6 narration split cannot be allocated one
+scenario order, and the narration split cannot be allocated one
 population at a time because its denominator is the whole batch. This
 module is the pass that runs once, over everything, after all of it
 exists:
@@ -17,19 +17,19 @@ exists:
    so no identifier — and no relationship between identifiers — can carry
    the order its scenario was generated in. Every cross-reference moves
    with them, including the ones embedded in ground-truth prose.
-2. **UTR narration variety** (§4.6's 50/25/15/10) is allocated across all
+2. **UTR narration variety** (the 50/25/15/10 split) is allocated across all
    settlement credits at once, under the two constraints the data itself
    imposes — see `_plan_utr_shapes`.
 3. **Emission order** is shuffled, so position in a JSONL file carries no
    scenario information either.
 
 **Timestamps are deliberately not reassigned here**, and that is the one
-place this pass reads §3.5's mitigation as a means rather than a rule. A
+place this pass treats the mitigation as a means rather than a rule. A
 settlement's `created_at` is evidence: which side of the T+2 working-day
 window it falls on decides `EXPECTED_TIMING_DIFFERENCE` versus
-`BANK_CREDIT_OVERDUE` (§3.3), the family-4 date-error variant is defined
-by a shifted posting date (REV-19), and a bank credit's `value_date` is
-read by §4.6 tier 2. Reassigning those globally would not de-correlate the
+`BANK_CREDIT_OVERDUE`, the family-4 date-error variant is defined
+by a shifted posting date, and a bank credit's `value_date` is
+read by the matcher's third tier. Reassigning those globally would not de-correlate the
 batch, it would destroy it. What the mitigation is *for* — that no
 timestamp block correlate with scenario — is instead met at the point of
 generation: every population now draws its settlement date from one
@@ -60,11 +60,11 @@ from pipeline.schemas import BankLine, LedgerEntry, ReconLine, Settlement
 UTR_IN_BANK_REF_NO_PERCENT = 50
 """Share of clean-UTR settlement credits that also carry the UTR in `bank_ref_no`.
 
-§4.6 tier 0 matches on "`settlement.utr` appears as a token in
+The matcher's first tier matches on "`settlement.utr` appears as a token in
 `bank_line.narration`, **or equals `bank_ref_no`**"; with the column null
 everywhere, that second branch was dead. Only clean-shape lines are given
 it: putting the UTR in `bank_ref_no` on an embedded, truncated or absent
-line would hand the matcher a tier-0 hit on a line the narration split
+line would hand the matcher a first-tier hit on a line the narration split
 placed deliberately further down the cascade, and the reported
 `match_tier_distribution` would stop reflecting the split it exists to
 demonstrate.
@@ -76,7 +76,7 @@ _ID_PATTERN = re.compile(r"[a-z]+_[0-9a-f]{8}")
 
 @dataclass(frozen=True)
 class FinalBatch:
-    """What `uv run generate` writes: the four §3.1 record types plus §1.6 ground truth."""
+    """What `uv run generate` writes: the four canonical record types plus ground truth."""
 
     settlements: list[Settlement]
     recon_lines: list[ReconLine]
@@ -85,26 +85,26 @@ class FinalBatch:
     ground_truth: list[GroundTruthCase]
 
     utr_shapes: dict[str, UtrShape]
-    """`bank_line.line_id` -> the §4.6 shape its narration was written in.
+    """`bank_line.line_id` -> the shape its narration was written in.
 
-    A record of what the pass did, for the checkpoint and for the FR-13
+    A record of what the pass did, for the checkpoint and for the
     run manifest — not part of the dataset, and never written to a JSONL
     file. The pipeline must recover the tier from the narration itself;
-    that recovery is what §4.6 grades.
+    that recovery is what the matching cascade grades.
     """
 
     settlement_credit_of: dict[str, str]
     """`bank_line.line_id` -> `settlement.id`, carried through from `GeneratedBatch`.
 
     Generator-side only, for the same reason: recovering this link is what
-    §4.6's cascade is graded on, so the pipeline never receives it.
+    the matching cascade is graded on, so the pipeline never receives it.
     """
 
     population_of: dict[str, str]
     """Any record identifier -> the name of the population that generated it.
 
-    The injection plan's own label at the granularity the plan uses (§3.5's
-    fourteen settlement-anchored rows, §3.6's four orphan rows, and the
+    The injection plan's own label at the granularity the plan uses (the
+    fourteen settlement-anchored rows, the four orphan rows, and the
     noise lines), which is finer than the `(class, subtype, state)` triple
     ground truth carries — families 1, 2 and 5 share one triple and are
     three different constructions. The fingerprint checkpoint needs the
@@ -112,14 +112,14 @@ class FinalBatch:
     just outcomes.
 
     Generator-side only, like `utr_shapes`: never written to a JSONL file,
-    never available to the pipeline. §5.3's reported check runs the same
+    never available to the pipeline. The reported check runs the same
     statistic over the ground-truth triple, which the eval harness already
     reads.
     """
 
 
 NOISE_POPULATION = "non_settlement_noise"
-"""§3.6's bank-statement noise: real lines, no case, and the label the absence of a case implies."""
+"""The bank-statement noise: real lines, no case, and the label the absence of a case implies."""
 
 
 def finalize_batch(
@@ -243,7 +243,7 @@ def _collect_ids(batch: GeneratedBatch) -> list[str]:
     """Every distinct identifier in the batch, in first-seen order.
 
     Includes `ledger_entry.reference` values that resolve to no recon line
-    — the phantom references §3.3's `AMBIGUOUS_CASE` construction depends
+    — the phantom references the `AMBIGUOUS_CASE` construction depends
     on. They are identifiers like any other and must move with the rest;
     leaving them behind would turn "references nothing in the batch" into
     "is the only reference that survived the pass".
@@ -285,7 +285,7 @@ def _remap(mapping: dict[str, str], value: str | None) -> str | None:
 
 
 def _remap_ids_in_text(mapping: dict[str, str], text: str | None) -> str | None:
-    """Rewrite identifiers appearing inside ground-truth prose (§1.6's `expected_resolution`).
+    """Rewrite identifiers appearing inside ground-truth prose (`expected_resolution`).
 
     UTRs are untouched: they are uppercase and carry no underscore, so the
     identifier pattern cannot match one.
@@ -295,11 +295,11 @@ def _remap_ids_in_text(mapping: dict[str, str], text: str | None) -> str | None:
     return _ID_PATTERN.sub(lambda match: mapping.get(match.group(0), match.group(0)), text)
 
 
-# --- 2. §4.6's UTR narration variety. ---
+# --- 2. UTR narration variety. ---
 
 
 def _apply_utr_variety(rng: random.Random, batch: GeneratedBatch) -> dict[str, UtrShape]:
-    """Rewrite each settlement credit's narration in its planned §4.6 shape."""
+    """Rewrite each settlement credit's narration in its planned shape."""
     settlements_by_id = {settlement.id: settlement for settlement in batch.settlements}
     lines_by_id = {line.line_id: line for line in batch.bank_lines}
     credit_line_ids = [line.line_id for line in batch.bank_lines if line.line_id in batch.settlement_credit_of]
@@ -331,7 +331,7 @@ def _plan_utr_shapes(
     settlements_by_id: dict[str, Settlement],
     credit_line_ids: list[str],
 ) -> dict[str, UtrShape]:
-    """Allocate §4.6's 50/25/15/10 split across every settlement credit at once.
+    """Allocate the 50/25/15/10 split across every settlement credit at once.
 
     Two constraints come from the data, not from the scenario — the plan
     never asks which population a line belongs to:
@@ -342,15 +342,15 @@ def _plan_utr_shapes(
       ten absent slots are already spoken for, and if those were the *only*
       absent lines then "no UTR in the narration" would identify the
       population outright.
-    - a credit may only be made `ABSENT` if §4.6 tier 2 can still recover
-      it: its deposit must equal its settlement's amount, and that amount
-      must be unique across the batch's bank lines, since "tier 2 is
-      accepted only if exactly one candidate exists in the window". Both
-      exclusions are read off the records. In practice the first excludes
-      `SETTLEMENT_AMOUNT_MISMATCH`, whose bank credit deliberately differs
-      from its settlement header — dropping its UTR as well would leave the
-      case with no anchor of any kind and no way to be the mismatch it is
-      labelled as.
+    - a credit may only be made `ABSENT` if the matcher's third tier can
+      still recover it: its deposit must equal its settlement's amount, and
+      that amount must be unique across the batch's bank lines, since that
+      tier is accepted only if exactly one candidate exists in the window.
+      Both exclusions are read off the records. In practice the first
+      excludes `SETTLEMENT_AMOUNT_MISMATCH`, whose bank credit deliberately
+      differs from its settlement header — dropping its UTR as well would
+      leave the case with no anchor of any kind and no way to be the
+      mismatch it is labelled as.
     """
     targets = _largest_remainder_allocation(len(credit_line_ids), UTR_SHAPE_TARGET_SHARE)
     deposit_counts = Counter(line.deposit_paise for line in batch.bank_lines)
@@ -363,7 +363,7 @@ def _plan_utr_shapes(
     ]
     if len(forced_absent) > targets[UtrShape.ABSENT]:
         raise ValueError(
-            f"{len(forced_absent)} settlements carry no UTR but §4.6 allows only "
+            f"{len(forced_absent)} settlements carry no UTR but the plan allows only "
             f"{targets[UtrShape.ABSENT]} absent narrations in a batch of {len(credit_line_ids)}"
         )
 

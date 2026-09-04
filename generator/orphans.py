@@ -1,16 +1,16 @@
-"""Orphan-case generation and non-settlement noise, per spec.md §3.6 and
-the REV-17/REV-18-corrected bank-line decomposition.
+"""Orphan-case generation and non-settlement noise, with a
+granularity-corrected bank-line decomposition.
 
-25 non-settlement-anchored cases (§3.6): `UNMATCHED_INBOUND_CREDIT` (8),
+25 non-settlement-anchored cases: `UNMATCHED_INBOUND_CREDIT` (8),
 an opaque-narration `AMBIGUOUS_CASE` (8), `REVERSAL_UNMATCHED` (6), and
-`DUPLICATE_CREDIT` (3 cases spanning 6 bank lines — REV-18's granularity
+`DUPLICATE_CREDIT` (3 cases spanning 6 bank lines — a granularity
 correction: "a duplicate credit and the original credit carrying the same
-UTR form a single case") — 28 bank lines total, matching REV-17's ~28
+UTR form a single case") — 28 bank lines total, matching the ~28
 orphan-case-line figure exactly.
 
 Plus ~50 non-settlement-anchored **noise** lines (bank charges, unrelated
-NEFT, self-matching reversal pairs) that carry no case at all — §3.6:
-"Bank charges stay noise, not cases," and the matcher must learn to
+NEFT, self-matching reversal pairs) that carry no case at all — bank
+charges stay noise, not cases, and the matcher must learn to
 correctly ignore them rather than raise a case.
 
 **"Unrelated NEFT" noise is always a debit (outbound, unrelated business
@@ -21,7 +21,7 @@ banking activity), never a credit.** Session 2.2's first draft drew this
 same amount distribution, no settlement anchor either way — so nothing in
 `bank_line` could tell a noise credit from a real case credit apart.
 Found and fixed in session 3.2 before case assembly (component 2, fully
-deterministic, no LLM per §4.2) tried to build a rule that doesn't exist:
+deterministic, no LLM) tried to build a rule that doesn't exist:
 an *outbound* transfer to an unrelated party is the realistic noise case
 (no business reconciles every vendor payment against Razorpay
 settlements), and it is what makes the population content-distinguishable
@@ -37,7 +37,7 @@ Two of session 2.2's constructions were narration fingerprints rather than
 evidence, and both are gone: the noise reversal pairs' credit leg named a
 counterparty (`"UNRELATED VENDOR"`) that appeared nowhere else in the
 batch, and the `REVERSAL_UNMATCHED` cases used a reversal sentence shape
-the noise pairs never used. §3.6 separates those two populations by
+the noise pairs never used. Those two populations are separated by
 whether a matching prior credit exists in the batch — that is the
 evidence, and it must be the only separator.
 """
@@ -67,7 +67,7 @@ from pipeline.schemas import BankLine
 N_UNMATCHED_INBOUND_CREDIT = 8
 N_AMBIGUOUS_ORPHAN = 8
 N_REVERSAL_UNMATCHED = 6
-N_DUPLICATE_CREDIT_CASES = 3  # spans 6 bank lines, REV-18
+N_DUPLICATE_CREDIT_CASES = 3  # spans 6 bank lines
 
 N_NOISE_BANK_CHARGES = 20
 N_NOISE_UNRELATED_NEFT = 18
@@ -77,7 +77,7 @@ _ORPHAN_CREDIT_SHAPES = (UtrShape.CLEAN, UtrShape.EMBEDDED)
 """How a non-settlement credit carries its own reference.
 
 Orphan and noise credits reference a token that belongs to no settlement,
-so no §4.6 tier can match them however the token is written. Drawing
+so no matcher tier can match them however the token is written. Drawing
 across two shapes keeps them from being the batch's only single-shaped
 credits, which would itself be a tell.
 """
@@ -208,7 +208,7 @@ def generate_reversal_unmatched_batch(
 def generate_duplicate_credit_batch(
     rng: random.Random, snapshot_date: date, n_cases: int = N_DUPLICATE_CREDIT_CASES
 ) -> FamilyBatch:
-    """`OPERATIONAL_EXCEPTION`/`DUPLICATE_CREDIT`: same UTR credited twice — one case spans two bank lines (REV-18)."""
+    """`OPERATIONAL_EXCEPTION`/`DUPLICATE_CREDIT`: same UTR credited twice — one case spans two bank lines."""
     batch = FamilyBatch()
     for _ in range(n_cases):
         utr = random_utr(rng)
@@ -250,11 +250,11 @@ ORPHAN_POPULATIONS = (
     ("reversal_unmatched", generate_reversal_unmatched_batch),
     ("duplicate_credit", generate_duplicate_credit_batch),
 )
-"""§3.6's four orphan populations in generation order, named — see `FAMILY_POPULATIONS`."""
+"""The four orphan populations in generation order, named — see `FAMILY_POPULATIONS`."""
 
 
 def generate_all_orphan_batches(rng: random.Random, snapshot_date: date) -> FamilyBatch:
-    """All four §3.6 orphan populations, 25 cases / 28 bank lines combined."""
+    """All four orphan populations, 25 cases / 28 bank lines combined."""
     combined = FamilyBatch()
     for _name, generate in ORPHAN_POPULATIONS:
         combined.extend(generate(rng, snapshot_date))
@@ -262,7 +262,7 @@ def generate_all_orphan_batches(rng: random.Random, snapshot_date: date) -> Fami
 
 
 def generate_noise_bank_lines(rng: random.Random, snapshot_date: date) -> list[BankLine]:
-    """~50 non-settlement-anchored bank lines the matcher must ignore, not close as cases (§2.2, §3.6).
+    """~50 non-settlement-anchored bank lines the matcher must ignore, not close as cases.
 
     No `GroundTruthCase` is emitted for any of these — that absence *is*
     the label: a correct matcher run produces zero cases referencing them.

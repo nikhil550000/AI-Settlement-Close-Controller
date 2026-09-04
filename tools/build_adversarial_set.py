@@ -1,7 +1,7 @@
-"""One-time hand-authoring script for the §5.3 adversarial set.
+"""One-time hand-authoring script for the adversarial set.
 
 **This script is gitignored; its output under `data/adversarial/` is the
-committed artifact.** Per §6.4's version-control protocol, "the
+committed artifact.** Following the version-control protocol, "the
 hand-authored adversarial set ... is source, not output; nothing
 regenerates it" — the ten cases below are literal, hand-picked values
 (amounts, dates, narrations), not draws from any distribution, and this
@@ -15,9 +15,9 @@ of how the ten cases were built, not as a thing meant to be re-run to
 "regenerate" the data — the JSONL files it once produced are what is
 committed and what `tests/test_adversarial.py` reads.
 
-## The four §5.3 boundaries, and which case(s) cover each
+## The four boundaries, and which case(s) cover each
 
-- **`T-01` versus `T-03` (REV-16).** Cases `adv_setl_t01` / `adv_setl_t03`
+- **`T-01` versus `T-03`.** Cases `adv_setl_t01` / `adv_setl_t03`
   share an identical amount/fee/tax (gross ₹1,000, fee ₹20, tax ₹3.60) so
   that gross (₹1,000.00) and net (₹976.40) are the only thing separating
   which template's evidence predicate should fire — the same numbers,
@@ -26,10 +26,10 @@ committed and what `tests/test_adversarial.py` reads.
   bank credit, window elapsed — stresses the T-04-outranks-
   `BANK_CREDIT_OVERDUE` precedence in `pipeline.apply.assign_state`) versus
   `adv_setl_f4date` (correct accounts and amount, wrong posting date,
-  credit landed — REV-11's policy exclusion). `adv_setl_f4noop` is the
+  credit landed — a policy exclusion). `adv_setl_f4noop` is the
   third leg of the same timing triangle: a lag still inside the T+2
   window, which must read as `AUTO_MATCHED`, not as either of the other two.
-- **Duplicate credit versus reversal (REV-18).** `adv_case_dupcredit` (two
+- **Duplicate credit versus reversal.** `adv_case_dupcredit` (two
   bank lines, identical narration/amount/date) versus `adv_case_reversal`
   (a reversal-shaped debit with no matching prior credit *anywhere in this
   batch*). A third pair — `adv_bank_noise_credit` / `adv_bank_noise_reversal`
@@ -40,7 +40,7 @@ committed and what `tests/test_adversarial.py` reads.
 - **At least one genuinely unresolvable case.** `adv_case_ambiguous` (an
   opaque-narration inbound credit — no counterparty, no Razorpay anchor,
   nothing else in the batch explains it). `adv_case_unmatched_credit` sits
-  beside it as the sibling Slot-A boundary (§4.2): the same shape, except
+  beside it as the sibling boundary: the same shape, except
   the narration *does* name a counterparty.
 
 `adv_setl_clean` is a fully-clean control case (`AUTO_MATCHED` / `NONE`) —
@@ -428,7 +428,7 @@ ledger_entries += [
         source=LedgerSource.ERP_IMPORT,
     ),
 ]
-# No bank_line: family 4 core's hard precondition (§3.2, REV-15) is that
+# No bank_line: family 4 core's hard precondition is that
 # no bank credit matching the settlement exists yet.
 ground_truth.append(
     GroundTruthCase(
@@ -555,7 +555,7 @@ ground_truth.append(
             "adv_je_f4date_revenue",
         ),
         expected_resolution=None,
-        expected_journal_entries=(),  # REV-11: no delta entry exists to post.
+        expected_journal_entries=(),  # no delta entry exists to post.
         expected_template_ids=(),
         expected_decline_reason=DeclineReason.POLICY,
         should_auto_apply=False,
@@ -755,7 +755,7 @@ ground_truth.append(
 
 _ORPHAN_DATE = date(2026, 8, 26)
 
-# Case 6: duplicate credit — two bank lines, identical narration/amount/date (REV-18).
+# Case 6: duplicate credit — two bank lines, identical narration/amount/date.
 _dup_narration = "NEFT CR SHARMA ENTERPRISES REF ADVDUP1234567"
 bank_lines += [
     BankLine(
