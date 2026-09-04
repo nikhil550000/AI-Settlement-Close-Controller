@@ -52,7 +52,7 @@ recovers injected intent — not that the intent resembles real books. And the
 batch is anomaly-enriched tenfold, so match rate here isn't comparable to any
 industry figure.
 
-Seven hundred cases a second. Six hundred and fourteen tests. A clean clone
+Seven hundred cases a second. Six hundred and seventeen tests. A clean clone
 reproduces these metrics byte for byte."
 
 > **Screen:** scroll one `AUTO_CLOSED` case's audit trail so the six validations

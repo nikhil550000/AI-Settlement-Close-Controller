@@ -7,7 +7,7 @@
 Razorpay AI Buildathon 2026 · Track 4 (AI Finance Controller) · solo build
 
 [![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![tests](https://img.shields.io/badge/tests-614%20passed-1e8e5a)](tests/)
+[![tests](https://img.shields.io/badge/tests-617%20passed-1e8e5a)](tests/)
 [![false_match_rate](https://img.shields.io/badge/false__match__rate-0%2F150-1e8e5a)](#measured-not-tuned)
 [![auto_close_precision](https://img.shields.io/badge/auto__close__precision-50%2F50-1e8e5a)](#measured-not-tuned)
 [![reproduces offline](https://img.shields.io/badge/reproduces-offline%2C%20no%20API%20key-2b5fd9)](#quickstart--reproduce-path)
@@ -81,7 +81,7 @@ Other entry points:
 uv run generate --seed 0 --out-dir data/reference          # regenerate the reference batch
 uv run python tools/build_heldout_vocab_batch.py data/reference data/heldout_vocab
 uv run python tools/infer_bank_profile.py data/unseen_bank/kotak_statement.csv
-uv run pytest                                               # 614 passed, 1 skipped
+uv run pytest                                               # 617 passed, 1 skipped
 ```
 
 ---
