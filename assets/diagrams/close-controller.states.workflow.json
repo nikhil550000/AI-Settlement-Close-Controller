@@ -34,7 +34,7 @@
     { "id": "entry", "lane": "cascade", "col": 0, "type": "external", "label": "One case", "sublabel": "after components 2 to 7", "width": 150 },
     { "id": "b1", "lane": "cascade", "col": 1, "type": "security", "label": "1 · Policy exclusion?", "sublabel": "checked before all else", "width": 150 },
     { "id": "b2", "lane": "cascade", "col": 2, "type": "backend", "label": "2 · Correction landed?", "sublabel": "applied and re-reconciled", "width": 150 },
-    { "id": "b3", "lane": "cascade", "col": 3, "type": "backend", "label": "3 · Candidate failed?", "sublabel": "the 1.7.5 chain", "width": 150 },
+    { "id": "b3", "lane": "cascade", "col": 3, "type": "backend", "label": "3 · Candidate failed?", "sublabel": "the validator chain", "width": 150 },
     { "id": "b4", "lane": "cascade", "col": 4, "type": "backend", "label": "4 · Trigger fired?", "sublabel": "subtype or unmatched credit", "width": 150 },
     { "id": "b5", "lane": "cascade", "col": 5, "type": "backend", "label": "5 · Residual 0 paise?", "sublabel": "nothing left to correct", "width": 150 },
 

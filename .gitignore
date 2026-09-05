@@ -1,4 +1,4 @@
-# Secrets — never committed (spec.md §6.4)
+# Secrets: never committed.
 .env
 
 # Python / uv
@@ -7,13 +7,13 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Mutated at runtime, rebuilt from the committed dataset (spec.md §6.4)
+# Mutated at runtime, rebuilt from the committed dataset.
 *.sqlite
 *.sqlite3
 ledger.db
 
 # Run scratch output. `tools/` is the tracked home for anything capability-bearing:
-# FR-12 says nothing capability-bearing may live outside the repository, and the
+# Nothing capability-bearing may live outside the repository, and the
 # adversarial-set builder and the performance harness both produce committed claims.
 /scratch/
 /.run/
@@ -31,3 +31,8 @@ ledger.db
 /docs/AGENT.md
 /docs/BUILDLOG.md
 /PITCH.md
+
+# The locked design document the build was written against. A working artifact,
+# kept locally: the code and the docs now state their own rules rather than
+# citing it.
+/spec.md
