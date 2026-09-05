@@ -141,7 +141,7 @@ So `data/heldout_vocab/` was built: the same 150 cases, the same injected anomal
 | `data/reference/` | 150/150, macro P/R **1.0000** | 150/150, macro P/R **1.0000** |
 | `data/heldout_vocab/` — same cases, same answer key, different words | **cannot complete a run** | 150/150, macro P/R **1.0000** |
 
-On the shipped batch the model earns nothing and is correctly **not** the default. Change only the words, and the keyword arm does not degrade gracefully. It raises, because the gateway marker stops separating the gateway from a merchant and the case split collapses. The model arm recovers the batch completely.
+On the shipped batch the model earns nothing and is correctly **not** the default. Change only the words, and the keyword arm does not degrade gracefully. It stops and says it cannot score the batch, because the gateway marker no longer separates the gateway from a merchant and the case split collapses. The model arm recovers the batch completely.
 
 `tests/test_heldout_vocabulary.py` pins **both** rows, asserting the failure as hard as the success. If someone later widens the keyword list, the keyword arm starts completing this batch, that test goes red, and the ablation has to be re-measured rather than silently becoming a comparison of two arms that now agree.
 

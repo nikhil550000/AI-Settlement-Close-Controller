@@ -44,7 +44,7 @@ from pipeline.eval_report import EvalReport, build_eval_report, render_eval_repo
 from pipeline.llm_cache import CacheMode, PromptCache
 from pipeline.llm_client import FIREWORKS_MODEL_ID, FireworksClient
 from pipeline.loaders import load_bank_lines, load_ground_truth, load_ledger_entries, load_recon_lines, load_settlements
-from pipeline.metrics import MetricsReport, RunProvenance
+from pipeline.metrics import MetricsError, MetricsReport, RunProvenance
 from pipeline.narration import build_narration_bundles, narrate_batch_llm
 from pipeline.report import build_report_context, render_report_html
 from pipeline.run import run_batch
@@ -273,16 +273,27 @@ def reconcile(
 ) -> None:
     """Run components 2-9 end to end over `data_dir` and emit both a console
     summary and `report.html` plus `metrics.json` under `out_dir`."""
-    eval_report, html = run_reconciliation(
-        data_dir=data_dir,
-        snapshot_date=date.fromisoformat(snapshot_date),
-        classifier_arm=classifier,
-        semantics_arm=semantics,
-        cache_path=cache_path,
-        cache_mode=cache_mode,
-        seed=seed,
-        git_sha=git_sha,
-    )
+    try:
+        eval_report, html = run_reconciliation(
+            data_dir=data_dir,
+            snapshot_date=date.fromisoformat(snapshot_date),
+            classifier_arm=classifier,
+            semantics_arm=semantics,
+            cache_path=cache_path,
+            cache_mode=cache_mode,
+            seed=seed,
+            git_sha=git_sha,
+        )
+    except MetricsError as error:
+        # An arm that cannot score a batch is a measured result, and it should not
+        # read as a crash. The library still raises, and the ablation tests still
+        # assert that `compute_metrics` refuses -- that refusal is what makes the
+        # comparison trustworthy. What changes here is only how the one documented
+        # command reports it, because a stack trace tells a reader that something
+        # broke, when what happened is that this arm declined to score a population
+        # it can no longer identify.
+        typer.echo(_cannot_score_message(semantics, data_dir, error), err=True)
+        raise typer.Exit(code=2) from None
 
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / "report.html"
@@ -293,6 +304,41 @@ def reconcile(
     typer.echo(_console_summary(eval_report))
     typer.echo(f"\nreport:  {report_path}")
     typer.echo(f"metrics: {metrics_path}")
+
+
+def _cannot_score_message(semantics: SemanticsArm, data_dir: Path, error: Exception) -> str:
+    """What to print when an arm cannot score the batch it was pointed at.
+
+    Exit code 2 rather than 1, so a caller can tell "this arm cannot score this
+    batch" apart from an ordinary failure, and so this stays distinguishable
+    from a missing file or a bad flag.
+    """
+    rule = "──────────────────────────────────────────────────────────────────────────"
+    return '\n'.join(
+        [
+            "",
+            rule,
+            "  Cannot score this batch with --semantics " + semantics.value + ".",
+            rule,
+            "",
+            "  " + str(error),
+            "",
+            "  Case assembly produced a different set of cases than the answer key",
+            "  describes, so there is nothing to score them against. Scoring anyway",
+            "  would compare two different populations and report a number for it.",
+            "",
+            "  This is a result, not a defect. " + str(data_dir) + " holds the",
+            "  reference batch's 150 cases with its answer key copied byte for byte",
+            "  and only the bank's wording changed. The keyword arm's markers do not",
+            "  survive that change; the model arm does. Re-run to see it complete:",
+            "",
+            "    uv run reconcile --semantics llm --data-dir " + str(data_dir),
+            "                     --cache-path data/semantics_cache.json",
+            "",
+            rule,
+            "",
+        ]
+    )
 
 
 def metrics_json(metrics: MetricsReport) -> str:
