@@ -62,10 +62,20 @@ def _run(args: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> su
 
 @pytest.fixture(scope="module")
 def clean_clone(tmp_path_factory) -> Path:
-    """A real second checkout of `HEAD`, sharing nothing with the tree pytest
-    is already running from except read-only git objects."""
+    """A real second checkout of `HEAD`, sharing nothing at all with the tree
+    pytest is already running from.
+
+    `--no-hardlinks` is load-bearing. `git clone --local` hardlinks the object
+    store by default, and a hardlink cannot cross a volume: on a CI runner whose
+    checkout is on one drive and whose temp directory is on another, the clone
+    fails outright with "Improper link". Copying the objects also makes the
+    isolation total rather than nearly total, which is what this module claims.
+    """
     clone_dir = tmp_path_factory.mktemp("clean_clone") / "repo"
-    result = _run(["git", "clone", "--local", "--quiet", str(REPO_ROOT), str(clone_dir)], cwd=REPO_ROOT)
+    result = _run(
+        ["git", "clone", "--local", "--no-hardlinks", "--quiet", str(REPO_ROOT), str(clone_dir)],
+        cwd=REPO_ROOT,
+    )
     assert result.returncode == 0, f"git clone failed:\n{result.stderr}"
     return clone_dir
 
@@ -75,8 +85,7 @@ def test_pinned_metrics_json_exists_and_names_a_seed_and_a_sha():
     that run" MUST be pinned and committed — read here as the precondition
     for the rest of this module, not as a fact this test discovers."""
     assert PINNED_METRICS_PATH.exists(), (
-        "data/metrics.json is not committed — the pinned run's pin has not been run yet "
-        ""
+        "data/metrics.json is not committed — the pinned run has not been run yet"
     )
     pinned = json.loads(PINNED_METRICS_PATH.read_text(encoding="utf-8"))
     provenance = pinned["provenance"]
