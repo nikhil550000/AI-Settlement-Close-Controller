@@ -347,6 +347,16 @@ h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
 .run-meta { color: var(--muted); font-size: 0.9rem; }
 .disclosure { background: #fff8e6; border: 1px solid #e8c766; border-radius: 6px;
   padding: 0.75rem 1rem; margin: 0.75rem 0 0; font-size: 0.9rem; }
+nav.section-nav { position: sticky; top: 0; z-index: 20; background: var(--panel);
+  border-bottom: 1px solid var(--border); padding: 0.5rem 2rem;
+  display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; align-items: baseline;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+nav.section-nav a { color: var(--muted); text-decoration: none; font-size: 0.85rem;
+  padding: 0.15rem 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+nav.section-nav a:hover { color: var(--text); border-bottom-color: var(--accent, #2b5fd9); }
+nav.section-nav .nav-label { color: var(--text); font-weight: 600; font-size: 0.85rem;
+  margin-right: 0.25rem; }
+section { scroll-margin-top: 3.25rem; }
 main { max-width: 1200px; margin: 0 auto; padding: 0 2rem; }
 section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   padding: 1.25rem 1.5rem; margin-top: 1.5rem; }
@@ -426,6 +436,17 @@ tr.unaccounted td, p.unaccounted { color: var(--bad); font-weight: 600; }
     (<span class="badge AUTO_MATCHED">AUTO_MATCHED</span>).
   </div>
 </header>
+
+<nav class="section-nav" aria-label="Report sections">
+  <span class="nav-label">Jump to</span>
+  <a href="#metrics">1 &middot; Metrics</a>
+  <a href="#case-log">2 &middot; Case log</a>
+  <a href="#audit-trail">3 &middot; Audit trail</a>
+  <a href="#exceptions">4 &middot; Exception report</a>
+  <a href="#ledger-diff">5 &middot; Ledger diff</a>
+  <a href="#bank-accounting">6 &middot; Bank-line accounting</a>
+  <a href="#attachment">7 &middot; Attachment evidence</a>
+</nav>
 
 <main>
 
