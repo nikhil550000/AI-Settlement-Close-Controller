@@ -1,6 +1,6 @@
-"""`SubtypeLabel`, Slot A's eight-value output vocabulary (§4.2).
+"""`SubtypeLabel`, Slot A's eight-value output vocabulary.
 
-Split out from `pipeline/classifier.py` (session 5.1) so `pipeline/apply.py`
+Split out from `pipeline/classifier.py` so `pipeline/apply.py`
 can reference the type on `CaseOutcome` without an import cycle:
 `pipeline/classifier.py` imports `pipeline.apply.CaseOutcome` (component 5
 runs downstream of component 8 — see `classifier.py`'s module docstring),
@@ -14,7 +14,7 @@ from enum import StrEnum
 
 
 class SubtypeLabel(StrEnum):
-    """Slot A's eight-value output vocabulary (§4.2): the seven `OPERATIONAL_EXCEPTION`
+    """Slot A's eight-value output vocabulary: the seven `OPERATIONAL_EXCEPTION`
     subtypes plus `AMBIGUOUS_CASE`.
 
     Deliberately its own type rather than `pipeline.ground_truth.ExceptionSubtype`

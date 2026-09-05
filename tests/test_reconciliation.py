@@ -1,11 +1,11 @@
-"""The books-versus-evidence residual §1.7.5's last check measures.
+"""The books-versus-evidence residual the validation chain's last check measures.
 
-Two things are being pinned. First, that `expected_positions` is §3.2's
+Two things are being pinned. First, that `expected_positions` is the chart of accounts's
 accrual model and not an approximation of it — the payment case is
-checked against §3.2's own worked example, arithmetic and all. Second,
-that the residual behaves the way §1.7.5 needs across the whole reference
+checked against the chart of accounts's own worked example, arithmetic and all. Second,
+that the residual behaves the way the validation chain needs across the whole reference
 batch: zero where the books are right, non-zero where they are not, and
-driven to zero by exactly the corrections §3.4 instantiates.
+driven to zero by exactly the corrections the template definitions instantiates.
 """
 
 from __future__ import annotations
@@ -85,11 +85,11 @@ def _bank_line(deposit: int = 0, withdrawal: int = 0) -> BankLine:
     )
 
 
-# --- §3.2's accrual model, transcribed and checked against its own example. ---
+# --- the chart of accounts's accrual model, transcribed and checked against its own example. ---
 
 
 def test_payment_expected_position_matches_the_section_3_2_worked_example() -> None:
-    """§3.2 family 3: "gross sale ₹1000, fee ₹20 (2% MDR), tax ₹3.60 ..., net credited ₹976.40".
+    """The chart of accounts family 3: "gross sale ₹1000, fee ₹20 (2% MDR), tax ₹3.60 ..., net credited ₹976.40".
 
     Its "Correct entry" line is `Dr Bank/Clearing 976.40, Dr Payment
     Gateway Charges 20, Dr GST on Gateway Charges 3.60 / Cr Sales Revenue
@@ -113,7 +113,7 @@ def test_refund_expected_position_is_family_2s_correct_posting() -> None:
 
     assert positions[ACCOUNT_SALES_RETURNS_AND_ALLOWANCES.code] == 50_000
     assert positions[ACCOUNT_RAZORPAY_CLEARING.code] == -50_000
-    assert ACCOUNT_SALES_REVENUE.code not in positions, "§3.2 REV-15: family 2 never touches Sales Revenue"
+    assert ACCOUNT_SALES_REVENUE.code not in positions, "the chart of accounts a later revision: family 2 never touches Sales Revenue"
 
 
 @pytest.mark.parametrize(
@@ -121,7 +121,7 @@ def test_refund_expected_position_is_family_2s_correct_posting() -> None:
     [("credit", 1), ("debit", -1)],
 )
 def test_adjustment_expected_position_follows_its_direction(field: str, clearing_sign: int) -> None:
-    """§3.2 family 5: a credit adjustment debits clearing, a debit adjustment credits it."""
+    """The chart of accounts family 5: a credit adjustment debits clearing, a debit adjustment credits it."""
     line = _recon_line(entity_id="adj_1", type=RazorpayEntityType.ADJUSTMENT, **{field: 250 * RUPEE})
 
     positions = expected_positions([line])
@@ -131,7 +131,7 @@ def test_adjustment_expected_position_follows_its_direction(field: str, clearing
 
 
 def test_every_expected_position_is_internally_balanced() -> None:
-    """Each §3.2 posting nets to zero across its accounts — which is why the residual is absolute."""
+    """Each the chart of accounts posting nets to zero across its accounts — which is why the residual is absolute."""
     lines = [
         _recon_line(amount=1000 * RUPEE, fee=20 * RUPEE, tax=360, credit=1000 * RUPEE),
         _recon_line(entity_id="rfnd_1", type=RazorpayEntityType.REFUND, debit=400 * RUPEE),
@@ -152,10 +152,10 @@ def test_an_unsettled_line_contributes_nothing() -> None:
 
 def test_a_line_type_with_no_posting_rule_raises_rather_than_being_skipped() -> None:
     """A silently-skipped line would understate the residual, which is the one
-    way §1.7.5's last check can read 0 for the wrong reason."""
+    way the validation chain's last check can read 0 for the wrong reason."""
     line = _recon_line(entity_id="trf_1", type=RazorpayEntityType.TRANSFER, credit=100 * RUPEE)
 
-    with pytest.raises(ReconciliationError, match="no §3.2 posting rule"):
+    with pytest.raises(ReconciliationError, match="no posting rule for recon line"):
         expected_positions([line])
 
 
@@ -218,7 +218,7 @@ def _batch_state(seed: int):
 
 
 def test_residual_is_zero_on_every_ground_truth_auto_matched_case() -> None:
-    """The 30 cases §3.6's batch totals put in `AUTO_MATCHED` are exactly the
+    """The 30 cases the orphan populations' batch totals put in `AUTO_MATCHED` are exactly the
     cases whose books already agree with Razorpay's evidence."""
     batch, cases, _, by_reference, by_case = _batch_state(seed=0)
     ground_truth = {row.case_id: row for row in batch.ground_truth}
@@ -237,7 +237,7 @@ def test_residual_is_zero_on_every_ground_truth_auto_matched_case() -> None:
 
 
 def test_every_correction_drives_its_cases_residual_to_zero() -> None:
-    """§1.7.5's last check, stated as the property the whole session rests on.
+    """The validation chain's last check, stated as the property the whole session rests on.
 
     Every case carrying a candidate JV starts non-zero and lands on
     exactly 0 once its candidates are applied — family 4 included, whose
@@ -251,7 +251,7 @@ def test_every_correction_drives_its_cases_residual_to_zero() -> None:
     for candidate in candidates:
         grouped.setdefault(candidate.case_id, []).append(candidate)
 
-    assert len(grouped) == 62, "50 family cases plus the 12 FR-06 tax cases"
+    assert len(grouped) == 62, "50 family cases plus the 12 the policy exclusions tax cases"
 
     for case_id, case_candidates in grouped.items():
         case = by_case_id[case_id]

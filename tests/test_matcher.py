@@ -1,6 +1,6 @@
-"""Session 3.3 checkpoint (spec.md §6.3): "Matches at more than one tier; 30
+""" checkpoint: "Matches at more than one tier; 30
 cases reach `AUTO_MATCHED`" — plus targeted unit coverage of each tier in
-`pipeline/matcher.py`'s FR-09 cascade.
+`pipeline/matcher.py`'s match cascade cascade.
 """
 
 from __future__ import annotations

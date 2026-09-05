@@ -1,19 +1,18 @@
-"""SQLite storage for the synthetic ledger, per spec.md §4.5.
+"""SQLite storage for the synthetic ledger.
 
 Raw `sqlite3`, no ORM. The `UNIQUE(case_id, resolution_id, account_code)`
-constraint makes invariant 1.7.4 (idempotent controller adjustments) a
+constraint makes idempotent controller adjustments a
 database constraint rather than an application-level check — the reason
-§4.5 gives for choosing SQLite here at all.
+SQLite was chosen here at all.
 
-**The third column is REV-24.** §1.7.4 and §4.5 originally placed the
-constraint on `(case_id, resolution_id)` alone, which session 1.2 built
-as written. That is a *row*-level constraint on a table §3.1 defines one
-row per *leg*, and every §3.4 template posts two or three legs sharing
+**Why the third column is there.** A constraint on `(case_id, resolution_id)`
+alone is a *row*-level constraint on a table that has one row per *leg*,
+and every template posts two or three legs sharing
 one resolution — so the first leg of a correcting entry inserted and the
 rest were rejected, leaving an unbalanced fragment and putting
-`AUTO_CLOSED` out of reach for all 50 cases §3.5 assigns to it. The pair
+`AUTO_CLOSED` out of reach for every case assigned to it. The pair
 still identifies the correction; `account_code` separates that
-correction's own legs and nothing else. No §3.4 template posts the same
+correction's own legs and nothing else. No template posts the same
 account twice within one entry, so the three columns are unique per leg
 by construction, and a second run of the same batch re-mints identical
 triples and is rejected leg-for-leg.
@@ -114,8 +113,8 @@ def insert_ledger_entries(
 def fetch_ledger_entries(conn: sqlite3.Connection) -> list[LedgerEntry]:
     """Read the whole ledger back as `LedgerEntry` records, in insertion order.
 
-    §1.8's first artifact — "the synthetic merchant ledger with applied
-    `AUTO_CLOSED` adjustments" — is this, after a run.
+    The synthetic merchant ledger with applied `AUTO_CLOSED` adjustments
+    is this, after a run.
     """
     rows = conn.execute(f"SELECT {_COLUMNS} FROM ledger_entry ORDER BY rowid").fetchall()
     return [

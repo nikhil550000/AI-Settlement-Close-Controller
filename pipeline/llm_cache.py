@@ -1,4 +1,4 @@
-"""SHA-256-keyed prompt/response cache for Slot A, per spec.md §4.3 (NFR-01 layer 2).
+"""SHA-256-keyed prompt/response cache for Slot A: the second determinism layer.
 
 > A SHA-256-keyed prompt/response cache, committed to the repository. The
 > key is the hash of the exact prompt string. The eval path runs
@@ -16,7 +16,7 @@ prompt, get a new key, old entries just go unused rather than needing
 translation.
 
 **Determinism, not the API, is what `--llm-cache=strict` actually
-buys.** No inference provider guarantees bitwise reproducibility (§4.3's
+buys.** No inference provider guarantees bitwise reproducibility (the
 own framing) — the guarantee comes from never calling the provider at
 all once a response is committed.
 """
@@ -30,7 +30,7 @@ from pathlib import Path
 
 
 class CacheMode(StrEnum):
-    """§4.3's two modes. There is no third: a miss under `STRICT` is an error,
+    """The two cache modes. There is no third: a miss under `STRICT` is an error,
     never a silent fallthrough to the API."""
 
     STRICT = "strict"
@@ -40,8 +40,8 @@ class CacheMode(StrEnum):
 class CacheMissError(RuntimeError):
     """Raised under `CacheMode.STRICT` when a prompt has no cached response.
 
-    A hard error, not a fallthrough — §4.3 is explicit that this is the
-    point of strict mode: NFR-05's offline mode is only real if a miss
+    A hard error, not a fallthrough. This is the
+    point of strict mode: the offline mode is only real if a miss
     cannot silently reach the network.
     """
 
@@ -72,7 +72,7 @@ class PromptCache:
     def get(self, prompt: str) -> str | None:
         """The cached response for this exact prompt, or `None` on a miss.
 
-        Counts the lookup toward `hit_rate` regardless of outcome — §4.3
+        Counts the lookup toward `hit_rate` regardless of outcome, because
         point 3 requires hit rate in the metrics JSON, and a rate is only
         honest if every lookup is counted, not just the misses that
         happened to be resolved.

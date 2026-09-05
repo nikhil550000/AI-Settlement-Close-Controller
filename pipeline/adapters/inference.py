@@ -1,39 +1,40 @@
 """Agentic bank-profile inference: propose -> verify -> repair, for a bank
-FR-08 has no hand-written profile for.
+the adapter has no hand-written profile for.
 
 ## Why this exists at all
 
-§2.6 fixes the adapter's contract as *declarative*: "The three FR-08
-profiles are YAML column maps, not code." That is a deliberate design
-choice with an equally deliberate cost — onboarding a fourth bank means a
-human reads a sample export, transcribes eight column names and a
-`strftime` pattern into `profiles/<bank>.yaml`, and iterates until the
-parse comes out clean. `pipeline/adapters/profiles.py` and
-`pipeline/adapters/bank_adapter.py` already do everything downstream of
-that transcription. The transcription itself is the only step in FR-08
-that is neither arithmetic nor policy: it is reading an unfamiliar
-document and guessing what its columns mean.
+The adapter's contract is *declarative*: the bank profiles are YAML column
+maps, not code. That is a deliberate design choice with an equally
+deliberate cost — onboarding a fourth bank means a human reads a sample
+export, transcribes eight column names and a `strftime` pattern into
+`profiles/<bank>.yaml`, and iterates until the parse comes out clean.
+`pipeline/adapters/profiles.py` and `pipeline/adapters/bank_adapter.py`
+already do everything downstream of that transcription. The transcription
+itself is the only step in adapting a new bank that is neither arithmetic
+nor policy: it is reading an unfamiliar document and guessing what its
+columns mean.
 
-That is exactly the shape of task §4.2 reserves for a model — "no
-residual computation decides it" — and it is the one genuinely *agentic*
-surface in this project, in the strict sense: the model does not answer
-once and get believed, it proposes an artifact, deterministic code runs
-that artifact against reality, and the failure is handed back for repair
-until a bounded attempt budget runs out. Slot A (`pipeline/classifier.py`)
+That is exactly the shape of task reserved for a model elsewhere in this
+pipeline — a question no residual computation decides — and it is the one
+genuinely *agentic* surface in this project, in the strict sense: the model
+does not answer once and get believed, it proposes an artifact, deterministic
+code runs that artifact against reality, and the failure is handed back for
+repair until a bounded attempt budget runs out. Slot A (`pipeline/classifier.py`)
 and Slot B (`pipeline/narration.py`) are single-shot graded calls with no
 feedback edge. This module is the loop.
 
 ## The invariant that makes the loop safe
 
-Invariant 1.7.2 and §4.2's boundary both say the same thing in different
-words: **the model never puts a value into the ledger.** Everything here
-is built to keep that true even though the model is now writing a
-*parser configuration*, which is a strictly more powerful thing to hand a
-model than an eight-value enum:
+The model may classify and may write prose, but it may never originate an
+account, an amount, or a narration on the automated path — and here that
+means, concretely: **the model never puts a value into the ledger.**
+Everything here is built to keep that true even though the model is now
+writing a *parser configuration*, which is a strictly more powerful thing
+to hand a model than an eight-value enum:
 
 1. **The model's entire output space is column names and a date pattern.**
-   `PROPOSAL_JSON_SCHEMA` is the constrained-decoding contract (§4.3
-   layer 1, the same mechanism Slot A uses), and it has no field for an
+   `PROPOSAL_JSON_SCHEMA` is the constrained-decoding contract (the same
+   mechanism Slot A uses), and it has no field for an
    amount, an account, a paise figure, or a `bank_profile` tag. It cannot
    emit a number that reaches a `BankLine`; it can only nominate which
    *column of the bank's own file* a number is read from.
@@ -44,9 +45,9 @@ model than an eight-value enum:
    parser verifies the wrong program.
 3. **A proposal is not believed; it is executed and checked.**
    `verify_proposal` runs nine deterministic checks (below), including
-   double-entry balance continuity — arithmetic the model cannot see the
-   answer to and cannot talk its way past. An unverified proposal never
-   becomes a profile, and `InferenceResult.accepted` is set by
+   double-entry balance continuity — an independent witness: arithmetic the
+   model cannot see the answer to and cannot talk its way past. An unverified
+   proposal never becomes a profile, and `InferenceResult.accepted` is set by
    `VerificationOutcome.ok`, which is set by that arithmetic, never by
    anything the model said about itself.
 4. **The loop terminates.** `max_attempts` (default 3) is a hard budget,
@@ -78,14 +79,14 @@ under '%m/%d/%Y'" names the bug and its fix in one line.
    lookup, which is a stack trace, not a repair signal.
 3. `header_row_found` — the declared header actually occurs in the file.
    `bank_adapter._find_header_row` requires an exact, order-sensitive
-   match on the row's non-blank cells (§2.6: the junk-block shape is not
-   knowable ahead of time, so the header row is found by content), so a
-   header the model paraphrased or re-ordered fails here.
+   match on the row's non-blank cells (the junk-block shape above the real
+   table is not knowable ahead of time, so the header row is found by
+   content), so a header the model paraphrased or re-ordered fails here.
 4. `adapter_parses` — `parse_bank_statement` runs to completion. Catches
    the mis-mapping class that only shows up as an exception, e.g. a
    narration column mapped to `withdrawal_column`, where
    `money.rupees_string_to_paise` refuses to turn `"NEFT CR-..."` into
-   paise (NFR-04: integer paise, no float, and no silent coercion).
+   paise (money stays integer paise, never a float, with no silent coercion).
 5. `rows_parsed` / 6. `all_rows_parsed` — the parse consumed every data
    row. `bank_adapter` ends the table at the first row whose value-date
    cell fails to parse, which is precisely how a wrong `date_format` or a
@@ -95,7 +96,7 @@ under '%m/%d/%Y'" names the bug and its fix in one line.
    check cannot be satisfied by the same mistake it is meant to catch.
 7. `narrations_non_empty` — every line has free text. `narration` is the
    only evidence the `UNMATCHED_INBOUND_CREDIT` / `AMBIGUOUS_CASE` split
-   reads (§4.2), so a blank narration column silently disarms Slot A
+   reads, so a blank narration column silently disarms Slot A
    downstream rather than failing here.
 8. `direction_coherent` — every row moves money in exactly one direction.
 9. `balance_continuity` — for every row after the first,
@@ -111,14 +112,14 @@ under '%m/%d/%Y'" names the bug and its fix in one line.
 
 ## What this module deliberately does not decide
 
-`BankLine.bank_profile` (§3.1) is a closed three-value enum, and §3.1's
-schemas are not this session's to widen. The inferred profile therefore
+`BankLine.bank_profile` is a closed three-value enum, and the canonical
+input schemas are not this module's to widen. The inferred profile therefore
 carries a `bank_profile` tag the *caller* supplies — provenance metadata
 naming which existing slot the unseen bank's lines are booked under — and
 the model is never asked for it: it is absent from
 `PROPOSAL_JSON_SCHEMA` entirely, on the same principle as point 1 above.
-Widening the enum (a `kotak` member, or a free-string bank tag) is a §3.1
-schema change with migration consequences for every committed JSONL
+Widening the enum (a `kotak` member, or a free-string bank tag) is a schema
+change with migration consequences for every committed JSONL
 fixture, and it is orthogonal to whether the loop works: every check above
 is a check on the column map.
 
@@ -126,7 +127,7 @@ Likewise, this module infers a profile; it does not install one. The
 accepted YAML is returned as text for a human to review and commit into
 `pipeline/adapters/profiles/`. An agent that silently added a parser
 configuration to the graded path would be exactly the kind of unreviewed
-model output §1.7 exists to prevent.
+model output this pipeline exists to prevent.
 """
 
 from __future__ import annotations
@@ -176,7 +177,7 @@ proves nothing."""
 
 DEFAULT_SAMPLE_ROWS = 16
 """Rows of the raw file shown to the model: enough to cover the junk header block
-(§2.6 names no bound on its size; the fixtures run 4-6 rows), the header row, and
+(no bound is placed on its size; the fixtures run 4-6 rows), the header row, and
 enough data rows that the date format is unambiguous from the day-of-month values
 alone. Fixed rather than "until the header row" on purpose — locating the header
 row is the model's job, and pre-locating it here would be this module quietly doing
@@ -190,7 +191,7 @@ _ALLOWED_STRFTIME_DIRECTIVES = frozenset("dmyYbBeHIMSpj")
 """Directives a bank statement's date cell can plausibly need. Deliberately not the
 full `strftime` set: `%c`/`%x`/`%X` are locale-dependent, and a locale-dependent
 profile would parse differently on the grader's machine than on this one, which
-NFR-01 forbids as squarely as a float in a money path does."""
+breaks determinism as squarely as a float in a money path does."""
 
 _DIRECTIVE_RE = re.compile(r"%(.)")
 
@@ -223,7 +224,7 @@ PROPOSAL_JSON_SCHEMA: dict = {
     ],
     "additionalProperties": False,
 }
-"""§4.3 layer 1 (constrained decoding), applied to a configuration instead of a label.
+"""Constrained decoding, applied to a configuration instead of a label.
 
 Two shapes are load-bearing here. **`additionalProperties: False` plus no
 `bank_profile` key** is what makes "the model cannot tag the ledger" a property of
@@ -231,10 +232,10 @@ the decoder rather than a promise in prose — the field does not exist in the s
 the model samples from. **The two optional columns are typed `string`, not
 `["string", "null"]`**, with `""` meaning "this bank has no such column": a nullable
 union is the more natural JSON Schema, but constrained-decoding backends vary in
-which subset of JSON Schema they honour (§4.4's own "re-check against the live
-catalog" caution applies to schema support as much as to model IDs), and an empty
-string is a value every backend can emit. The `"" -> None` normalisation is done in
-`parse_proposal_response`, in code, deterministically."""
+which subset of JSON Schema they honour (a model catalog and its constraints should
+always be re-checked against the live provider, not assumed from memory), and an
+empty string is a value every backend can emit. The `"" -> None` normalisation is
+done in `parse_proposal_response`, in code, deterministically."""
 
 _PROPOSAL_INSTRUCTIONS = (
     "You are configuring a bank-statement adapter for a settlement-reconciliation "
@@ -269,7 +270,7 @@ _PROPOSAL_INSTRUCTIONS = (
 (`pipeline.llm_cache.cache_key`) is driven entirely by the file's own rows and, on a
 retry, by the previous failure — never by anything that varies between two runs of
 the same command. A wording change here invalidates the whole committed cache at
-once, which is the intended blast radius for a deliberate prompt edit (§4.3)."""
+once, which is the intended blast radius for a deliberate prompt edit."""
 
 
 class ProposalResponseError(RuntimeError):
@@ -396,7 +397,7 @@ class VerificationOutcome(BaseModel):
 
 
 class InferenceAttempt(BaseModel):
-    """One turn of the loop, kept whole so a give-up is auditable (§1.7.3).
+    """One turn of the loop, kept whole so a give-up is auditable.
 
     A failed run's value is entirely in this record: three proposals and the three
     specific reasons they were rejected is a report an engineer can act on, whereas
@@ -481,7 +482,7 @@ def parse_proposal_response(raw: str) -> ProfileProposal:
     `PROPOSAL_JSON_SCHEMA`); nothing else about the model's answer is repaired,
     corrected or second-guessed here. Silently fixing a proposal would make the
     verification result a statement about this function rather than about the model,
-    and §5.4's ablation arms are only meaningful if what is measured is what the
+    and an ablation comparing arms is only meaningful if what is measured is what the
     model actually said.
     """
     try:
@@ -554,8 +555,9 @@ def _dense_row_count(grid: Sequence[Sequence[str]], header_row: int) -> int:
     honest limitation: a bank whose summary block is as densely populated as its
     transaction rows would over-count here and every proposal would be rejected as
     truncated. That fails *closed* (a clean give-up, never a wrongly accepted
-    profile), which is the correct direction for §1.3's error preference, and the
-    give-up report names this check by name so the cause is legible.
+    profile), which is the correct direction when abstaining is cheaper than
+    guessing wrong, and the give-up report names this check by name so the
+    cause is legible.
     """
     if not grid:
         return 0
@@ -620,7 +622,7 @@ def _truncation_error(
 def _signed_rupees(paise: int) -> str:
     """A signed rupee string for a *movement* (a balance delta), not a magnitude.
 
-    `money.paise_to_rupees_string` is built for §3.1's money fields, every one of
+    `money.paise_to_rupees_string` is built for the canonical schemas' money fields, every one of
     which is a non-negative magnitude (see `money.NonNegPaise`), and its `divmod`
     floors — so it would render a negative delta a rupee off. Balance deltas are the
     one place in this codebase where a signed figure is meaningful, and they exist
@@ -827,12 +829,12 @@ def infer_bank_profile(
 
     The cache/mode/client contract is `pipeline.classifier.classify_case_llm`'s,
     unchanged: `CacheMode.STRICT` never constructs a network path and a miss is
-    `CacheMissError` (§4.3 — "a hard error rather than a fallthrough to the API"), so
+    a `CacheMissError` — a hard error rather than a fallthrough to the API — so
     a fully-cached run needs no `client` and no `FIREWORKS_API_KEY`;
     `CacheMode.REFRESH` is the only mode that calls Fireworks. Because attempt *n*'s
     prompt embeds attempts 1..*n-1*'s failures, a repair sequence caches as a chain
     of distinct entries and replays offline in the same order, with the same
-    verdicts — the loop is reproducible under NFR-01 even though it is adaptive.
+    verdicts — the loop is reproducible even though it is adaptive.
 
     Termination is by attempt budget, and both terminal states are ordinary returns:
     `accepted=True` with a `profile_yaml` to review, or `accepted=False` with
@@ -901,7 +903,7 @@ def _default_comment_lines(path: str | Path, attempt: int, max_attempts: int) ->
     file it was inferred from, on which attempt, and that deterministic code — not
     the model — accepted it."""
     return [
-        "FR-08 column map INFERRED by pipeline/adapters/inference.py, not hand-written.",
+        "Column map INFERRED by pipeline/adapters/inference.py, not hand-written.",
         f"Source export: {Path(path).name}. Accepted on attempt {attempt} of {max_attempts},",
         "after verification against that file by pipeline/adapters/bank_adapter.py:",
         "header located, every transaction row parsed, narrations non-empty, each row",

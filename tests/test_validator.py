@@ -1,6 +1,6 @@
-"""Invariant 1.7.5's chain and §3.4's two validation layers.
+"""Invariant 1.7.5's chain and the template definitions' two validation layers.
 
-§4.5 puts the test weight here on purpose — "`pytest`, concentrated on
+The storage contract puts the test weight here on purpose — "`pytest`, concentrated on
 the validator chain and the six templates" — so every check gets a
 hand-built candidate that fails it and only it where the checks can be
 isolated, plus a batch-level pass asserting the real candidates clear all
@@ -8,7 +8,7 @@ eight.
 
 The test that carries the most weight is
 `test_the_global_layer_catches_a_malformed_template_the_per_template_layer_cannot`:
-§3.4 justifies keeping two overlapping layers on exactly that ground, and
+the template definitions justifies keeping two overlapping layers on exactly that ground, and
 without it the global account-direction table is decoration.
 """
 
@@ -95,7 +95,7 @@ def _result(report, check: ValidationCheck):
     return next(result for result in report.results if result.check is check)
 
 
-# --- §3.4's second layer, transcribed. ---
+# --- the template definitions' second layer, transcribed. ---
 
 
 def test_the_global_direction_table_is_section_3_4s_seven_rows() -> None:
@@ -117,7 +117,7 @@ def test_the_template_allowlist_is_section_3_4s_six() -> None:
 
 
 def test_every_declared_template_obeys_the_global_direction_table() -> None:
-    """The two §3.4 layers must agree with each other on the six real templates.
+    """The two the template definitions layers must agree with each other on the six real templates.
 
     A template declaring an account on a side the global table forbids
     would be a malformed template shipped in the allowlist — the exact
@@ -137,7 +137,7 @@ def test_every_declared_template_obeys_the_global_direction_table() -> None:
 def test_the_global_layer_catches_a_malformed_template_the_per_template_layer_cannot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§3.4: "a broken template passes its own rules by definition".
+    """The template definitions: "a broken template passes its own rules by definition".
 
     `T-04` is redeclared to debit `Bank Account` — which the global table
     permits only on the credit side. The candidate then satisfies its own
@@ -262,7 +262,7 @@ def test_a_cited_record_absent_from_the_batch_is_rejected() -> None:
 
 
 def test_an_entry_citing_nothing_is_rejected() -> None:
-    """§1.7.3: "no unsourced conclusions reach an auto-action state"."""
+    """The audit trail: "no unsourced conclusions reach an auto-action state"."""
     candidate = _candidate(
         _leg(ACCOUNT_PAYMENT_GATEWAY_CHARGES, debit=2_360),
         _leg(ACCOUNT_RAZORPAY_CLEARING, credit=2_360),
@@ -311,7 +311,7 @@ def test_a_record_already_corrected_by_another_case_is_rejected() -> None:
 
 
 def test_account_checks_are_reported_before_the_balance_check() -> None:
-    """§3.4: an entry using a forbidden account "is rejected before the balance check runs"."""
+    """The template definitions: an entry using a forbidden account "is rejected before the balance check runs"."""
     order = [result.check for result in _validate(_good_t01()).results]
 
     assert order.index(ValidationCheck.ACCOUNT_IN_CHART) < order.index(ValidationCheck.ENTRY_BALANCED)
@@ -320,7 +320,7 @@ def test_account_checks_are_reported_before_the_balance_check() -> None:
 
 
 def test_every_check_runs_even_after_one_fails() -> None:
-    """§1.8's audit trail is "the specific safety validations passed", which a
+    """The required artifacts's audit trail is "the specific safety validations passed", which a
     chain that short-circuits cannot produce."""
     candidate = _candidate(
         _leg(Account("9999", "Suspense"), debit=1),
@@ -337,7 +337,7 @@ def test_every_check_runs_even_after_one_fails() -> None:
 def test_resolution_id_is_a_deterministic_function_of_the_template() -> None:
     ids = {template_id: resolution_id_for(template_id) for template_id in TemplateId}
 
-    assert len(set(ids.values())) == 6, "unique per (case_id, template_id) per §3.4"
+    assert len(set(ids.values())) == 6, "unique per (case_id, template_id) per the template definitions"
     assert ids[TemplateId.T01] == resolution_id_for(TemplateId.T01)
 
 

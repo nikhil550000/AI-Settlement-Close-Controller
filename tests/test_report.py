@@ -1,11 +1,11 @@
-"""Session 6.3's checkpoint (spec.md §6.3):
+""" checkpoint:
 
 > Opens from `file://` with networking off.
 
-FR-11 fixes what "opens" has to mean for a report nobody can browser-test in
+The report fixes what "opens" has to mean for a report nobody can browser-test in
 CI: **one self-contained static HTML file — no server, no build step, no
 external asset fetch.** This module cannot drive a real browser, so the
-checkpoint is discharged the way §5.6.2/NFR-05 discharge "runs offline"
+checkpoint is discharged the way the design/offline mode discharge "runs offline"
 everywhere else in this codebase: build the report from a real run — Slot A
 and Slot B both resolved from the committed `data/llm_cache.json` in
 `CacheMode.STRICT` with `client=None`, so the build touches no socket at all
@@ -13,9 +13,9 @@ and Slot B both resolved from the committed `data/llm_cache.json` in
 `urllib`, and assert the bytes on disk contain no reference this file could
 not resolve on its own: no `http://`/`https://` (no CDN, no external
 stylesheet, no remote fetch), no external `<script src=` or `<link href=`,
-nothing FR-11 forbids.
+nothing the report forbids.
 
-Around that: every §1.8 artifact is present and non-empty against the real
+Around that: every required artifacts artifact is present and non-empty against the real
 batch (five section headers, both disclosures verbatim, the model-generated
 badge on at least one Slot B narration), the embedded JSON blob parses and
 its case count matches the run, `format_paise`/`case_reasoning` are checked
@@ -61,12 +61,10 @@ def _build_offline_report(seed: int = 0):
     """One full, real run at `seed`, classified and narrated entirely from the
     committed cache — no network path is ever constructed.
 
-    Classifier is the **baseline**, not Slot A: `scratch/populate_slot_b_cache.py`
-    (session 5.3) populated `data/llm_cache.json`'s Slot B entries against the
+    Classifier is the **baseline**, not Slot A: `scratch/populate_slot_b_cache.py` populated `data/llm_cache.json`'s Slot B entries against the
     baseline arm's state distribution at seed 0, so only the baseline arm's
     EXTERNAL_ACTION_REQUIRED/ABSTAINED partition is guaranteed cache-covered.
-    Slot A moves a few `ABSTAINED` cases into `EXTERNAL_ACTION_REQUIRED`
-    (session 6.2's own finding), which would ask Slot B for narrations the
+    Slot A moves a few `ABSTAINED` cases into `EXTERNAL_ACTION_REQUIRED` own finding), which would ask Slot B for narrations the
     cache was never populated with and fail this test's own offline
     requirement — not a report bug, a fixture-arm mismatch.
     """
@@ -123,8 +121,8 @@ def test_report_opens_from_file_with_networking_off(tmp_path_factory, offline_re
     # read back through file:// is otherwise identical to what was rendered.
     assert read_back.replace("\r\n", "\n") == html
 
-    # FR-11: "no server, no build step, no external asset fetch." No CDN link,
-    # no remote font, no remote script — the whole tech-stack line in §4.5.
+    # the report: "no server, no build step, no external asset fetch." No CDN link,
+    # no remote font, no remote script — the whole tech-stack line in the storage contract.
     assert "http://" not in html
     assert "https://" not in html
     assert "<script src=" not in html
@@ -170,7 +168,7 @@ def test_both_required_disclosures_are_verbatim_in_the_header(offline_report):
 
 
 def test_slot_b_text_is_labelled_model_generated_in_the_report(offline_report):
-    """§4.2: "The FR-11 report MUST label every Slot B string as model-generated
+    """The model-slot boundary: "The the report MUST label every Slot B string as model-generated
     prose over deterministic facts." At least one EXTERNAL_ACTION_REQUIRED or
     ABSTAINED case exists on the reference batch, so at least one badge must render."""
     result, _ledger_entries, context = offline_report

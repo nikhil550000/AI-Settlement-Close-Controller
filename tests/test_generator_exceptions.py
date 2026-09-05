@@ -1,6 +1,6 @@
-"""Session 2.2 checkpoint (spec.md §6.3), settlement-anchored half:
-§3.5's case-allocation rows not built by session 2.1 — family-4 no-op
-(12), family-4 date-error (5), FR-06 tax positions (12),
+""" checkpoint, settlement-anchored half:
+the generator plan's case-allocation rows not built by — family-4 no-op
+(12), family-4 date-error (5), the policy exclusions tax positions (12),
 `SETTLEMENT_UTR_MISSING` (5), `BANK_CREDIT_OVERDUE` (5),
 `SETTLEMENT_AMOUNT_MISMATCH` (4), `DISPUTE_PENDING` (5), and
 `AMBIGUOUS_CASE` (9) — 57 cases exactly.
@@ -78,7 +78,7 @@ def _lines_by_settlement(batch):
 
 
 def test_settlement_amount_invariant_holds_except_for_the_deliberate_mismatch_population():
-    """§3.5's hard invariant holds for every population except `SETTLEMENT_AMOUNT_MISMATCH`, its one deliberate violation."""
+    """The generator plan's hard invariant holds for every population except `SETTLEMENT_AMOUNT_MISMATCH`, its one deliberate violation."""
     for name, (generate, _n) in _POPULATIONS.items():
         batch = generate(random.Random(1), SNAPSHOT)
         lines_by_settlement = _lines_by_settlement(batch)
@@ -127,7 +127,7 @@ def test_generation_is_deterministic_given_the_same_seed():
 
 
 def test_family_4_no_op_has_no_bank_line_and_is_within_window():
-    """`EXPECTED_TIMING_DIFFERENCE`/`AUTO_MATCHED`; REV-17 no-credit population."""
+    """`EXPECTED_TIMING_DIFFERENCE`/`AUTO_MATCHED`; a later revision no-credit population."""
     from datetime import datetime, timezone
 
     batch = generate_family_4_no_op_batch(random.Random(1), SNAPSHOT)
@@ -211,9 +211,7 @@ def test_dispute_pending_flags_exactly_one_payment_per_case():
 
 def test_ambiguous_ledger_entry_is_uncorroborated_but_attributable():
     """The pair must be *unresolvable* (no refund recon line backs it) and *attributable*
-    (its `reference` names a real payment in its own settlement) at the same time.
-
-    Session 2.2 had only the first half: the reference resolved to nothing
+    (its `reference` names a real payment in its own settlement) at the same time. had only the first half: the reference resolved to nothing
     anywhere in the batch, which also meant it belonged to no case, so
     these nine `ABSTAINED` labels were unreachable from evidence. Both
     halves are asserted here so neither can be lost again.

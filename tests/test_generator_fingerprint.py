@@ -1,5 +1,5 @@
-"""Session 2.3 checkpoint (spec.md §6.3): "Fingerprint checks pass; no ID
-or timestamp block correlates with scenario."
+"""The checkpoint: fingerprint checks pass; no ID or timestamp block
+correlates with scenario.
 
 Run against the full 150-case reference batch as `uv run generate` builds
 it — through `generate_reference_batch`, the same function the command
@@ -19,11 +19,12 @@ against the pre-pass batch to prove they have teeth: a check that passes
 on scenario-ordered input is measuring nothing.
 
 **Exact checks** pin the constructions the ordering checks cannot see —
-that no narration escapes the shared pool, that §4.6's split lands where
-it should, that the global ID pass left every cross-reference resolvable.
+that no narration escapes the shared pool, that the UTR-narration split lands
+where it should, that the global ID pass left every cross-reference
+resolvable.
 
 Populations are labelled from the injection plan
-(`FinalBatch.population_of`), never re-derived from the records — §3.5's
+(`FinalBatch.population_of`), never re-derived from the records — the
 label-emission rule applies to the checkpoint as much as to the ground
 truth.
 """
@@ -74,7 +75,7 @@ def _settlement_credits(batch: FinalBatch) -> list:
 
 
 DATE_ERROR_POPULATION = "family_4_date_error"
-"""The one population whose posting *date* is its anomaly (REV-19: `MISPOSTING` widened to cover period).
+"""The one population whose posting *date* is its anomaly (`MISPOSTING` widened to cover period).
 
 Excluded from the posting-date ordering check, and only from that one:
 its ledger legs sit a calendar month before the rest of the batch by
@@ -100,7 +101,7 @@ def _earliest_posting_date(batch: FinalBatch) -> dict[str, date]:
     for entry in batch.ledger_entries:
         settlement_id = settlement_of.get(entry.reference)
         if settlement_id is None:
-            continue  # a phantom reference: §3.3's `AMBIGUOUS_CASE` construction
+            continue  # a phantom reference: the subtype definitions' `AMBIGUOUS_CASE` construction
         if settlement_id not in earliest or entry.date < earliest[settlement_id]:
             earliest[settlement_id] = entry.date
     return earliest
@@ -116,7 +117,7 @@ def _artifact_orderings(batch: FinalBatch) -> dict[str, list[str]]:
     the case: where it sits in a file, what its identifier sorts next to,
     which sentence shape it was written from. Timestamps appear here as
     artifacts even though their window placement is evidence — the check
-    is whether the *ordering* clusters populations, and §3.3's window
+    is whether the *ordering* clusters populations, and the subtype definitions' window
     leaves the two window-anchored populations overlapping every other
     population's date range rather than occupying one of their own.
     """
@@ -135,7 +136,7 @@ def _artifact_orderings(batch: FinalBatch) -> dict[str, list[str]]:
         "emitted order: ground truth": [population[g.case_id] for g in batch.ground_truth],
         # Split by namespace: an orphan case has no settlement, so its id
         # cannot be a `setl_` one, and every `orphan_` id sorts below every
-        # `setl_` id. That block is the §3.6 case type, which the pipeline is
+        # `setl_` id. That block is the orphan populations case type, which the pipeline is
         # never given and could not infer from an id it does not receive —
         # ordering the two namespaces together would measure the naming
         # convention instead of asking whether an id reveals its population.
@@ -255,7 +256,7 @@ class _NonShufflingRandom(random.Random):
 
 
 def test_no_settlement_is_pinned_to_midnight_utc(batch):
-    """Session 2.2's two window-anchored populations sat at exactly midnight; nothing may again."""
+    """two window-anchored populations sat at exactly midnight; nothing may again."""
     assert not [s for s in batch.settlements if s.created_at % 86_400 == 0]
 
 
@@ -272,7 +273,7 @@ def test_every_settlement_falls_in_the_declared_window(batch):
 
 
 def test_the_date_error_variant_is_separable_by_posting_date(batch):
-    """The other side of that exclusion: REV-19's anomaly is a wrong *period*, so the date must give it away.
+    """The other side of that exclusion: a revision's anomaly is a wrong *period*, so the date must give it away.
 
     Not a fingerprint — it is the evidence the pipeline is required to
     find, and if it were absent the population would be unlabellable.
@@ -310,7 +311,7 @@ def test_no_ledger_narration_template_belongs_to_a_single_population(batch):
 
 
 def test_no_ledger_narration_carries_an_amount_or_names_an_anomaly(batch):
-    """Session 2.2's narrations restated the posted amounts and named the family in words.
+    """narrations restated the posted amounts and named the family in words.
 
     A digit in a ledger narration means an amount or an identifier has
     been copied into free text, where it becomes a second, unvalidated
@@ -325,7 +326,7 @@ def test_no_ledger_narration_carries_an_amount_or_names_an_anomaly(batch):
 
 
 def test_every_adjustment_carries_a_description_and_only_fr06_names_a_tax_position(batch):
-    """§4.2 makes the tax signature's *content* the FR-06 detection surface; its presence must not be."""
+    """The model-slot boundary makes the tax signature's *content* the policy exclusions detection surface; its presence must not be."""
     adjustments = [line for line in batch.recon_lines if line.type is RazorpayEntityType.ADJUSTMENT]
     assert adjustments
     for line in adjustments:
@@ -338,7 +339,7 @@ def test_every_adjustment_carries_a_description_and_only_fr06_names_a_tax_positi
     assert {line.description for line in adjustments if line.description in TAX_SIGNATURES} == set(TAX_SIGNATURES)
 
 
-# --- §4.6 UTR narration variety. ---
+# --- the match cascade UTR narration variety. ---
 
 
 def test_utr_variety_matches_the_section_4_6_split(batch):
@@ -362,7 +363,7 @@ def test_no_utr_shape_belongs_to_a_single_population(batch):
 
 
 def test_clean_narrations_carry_the_full_utr_as_a_whitespace_token(batch):
-    """§4.6 tier 0 reads "`settlement.utr` appears as a token", which this shape satisfies on any tokenizer."""
+    """Tier 0 reads "`settlement.utr` appears as a token", which this shape satisfies on any tokenizer."""
     settlements = {s.id: s for s in batch.settlements}
     for line in _settlement_credits(batch):
         if batch.utr_shapes[line.line_id] is not UtrShape.CLEAN:
@@ -383,7 +384,7 @@ def test_embedded_narrations_carry_the_full_utr_but_never_as_a_whitespace_token(
 
 
 def test_truncated_narrations_carry_a_prefix_that_still_identifies_one_settlement(batch):
-    """§4.6 tier 1 accepts a prefix of length >= 8; a prefix matching two settlements would corrupt the match."""
+    """Tier 1 accepts a prefix of length >= 8; a prefix matching two settlements would corrupt the match."""
     settlements = {s.id: s for s in batch.settlements}
     all_utrs = [s.utr for s in batch.settlements if s.utr]
     for line in _settlement_credits(batch):
@@ -398,7 +399,7 @@ def test_truncated_narrations_carry_a_prefix_that_still_identifies_one_settlemen
 
 
 def test_absent_narrations_leave_the_credit_recoverable_at_tier_2(batch):
-    """§4.6 tier 2 matches on amount inside the window, "accepted only if exactly one candidate exists"."""
+    """Tier 2 matches on amount inside the window, "accepted only if exactly one candidate exists"."""
     settlements = {s.id: s for s in batch.settlements}
     deposits = Counter(line.deposit_paise for line in batch.bank_lines)
     for line in _settlement_credits(batch):
@@ -459,7 +460,7 @@ def test_the_global_id_pass_keeps_every_cross_reference_resolvable(batch):
     }
     known = settlement_ids | entity_ids | journal_ids | line_ids | owned_ids
     # Every `ledger_entry.reference` in the batch resolves to a recon line as of
-    # session 4.1 — §3.3's `AMBIGUOUS_CASE` pair included, which is what makes it
+    # — the subtype definitions' `AMBIGUOUS_CASE` pair included, which is what makes it
     # attributable to its case. Kept as a named (now empty) set so that a
     # regression reintroducing a dangling reference fails the loop below rather
     # than being silently tolerated.
@@ -484,11 +485,9 @@ def test_the_global_id_pass_keeps_every_cross_reference_resolvable(batch):
 
 
 def test_the_ambiguous_cases_phantom_pairs_survive_the_id_pass(batch):
-    """§3.3's `AMBIGUOUS_CASE`: the contra-revenue pair stays uncorroborated *and* attributable.
-
-    Session 2.2 achieved the first half by pointing the pair's `reference`
+    """The subtype definitions' `AMBIGUOUS_CASE`: the contra-revenue pair stays uncorroborated *and* attributable. achieved the first half by pointing the pair's `reference`
     at an id that existed nowhere, which also detached it from its own
-    case; session 4.1 repointed it at a real payment in the same
+    case; repointed it at a real payment in the same
     settlement. Both properties are pinned here, after the global ID pass,
     because the pass rewrites every identifier in the batch and either one
     could be lost in it.
@@ -539,7 +538,7 @@ def test_the_finalized_batch_still_holds_the_section_3_5_counts(batch):
     assert len(batch.settlements) == 125
     assert len(batch.ground_truth) == 150
     assert len(_settlement_credits(batch)) == 98
-    assert len(batch.bank_lines) == 176  # REV-17: 98 settlement credits + 28 orphan-case + 50 noise
+    assert len(batch.bank_lines) == 176  # a later revision: 98 settlement credits + 28 orphan-case + 50 noise
     assert dict(Counter(g.expected_outcome_state.value for g in batch.ground_truth)) == _EXPECTED_STATE_TOTALS
     assert {batch.population_of[b.line_id] for b in batch.bank_lines} >= {NOISE_POPULATION}
 
@@ -561,7 +560,7 @@ def test_two_runs_with_the_same_seed_produce_an_identical_batch():
 
 
 def test_finalize_refuses_a_batch_it_cannot_shape_to_the_split():
-    """More UTR-less settlements than §4.6's absent share leaves is a hard error, not a silently skewed split."""
+    """More UTR-less settlements than match cascade's absent share leaves is a hard error, not a silently skewed split."""
     rng = random.Random(SEED)
     from generator.exceptions import generate_settlement_utr_missing_batch
 

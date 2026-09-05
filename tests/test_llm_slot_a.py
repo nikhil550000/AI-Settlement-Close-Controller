@@ -1,25 +1,23 @@
-"""Session 5.2's checkpoint (spec.md §6.3):
+"""The checkpoint:
 
-> Two consecutive strict runs give identical metrics.
+Two consecutive strict runs give identical metrics.
 
-and Phase 5's:
-
-> `--llm-cache=strict` produces identical metrics on two consecutive runs.
-> The cache is committed. A run with networking disabled succeeds end to
-> end (NFR-05).
+`--llm-cache=strict` produces identical metrics on two consecutive runs.
+The cache is committed. A run with networking disabled succeeds end to
+end.
 
 The checkpoint test is `test_two_consecutive_strict_runs_give_identical_metrics`.
 Everything under `LLMClient` here is a stub — never `pipeline.llm_client.FireworksClient`
 — because the entire point of `CacheMode.STRICT` is that a checkpoint run must not
-require network or credentials (NFR-05). A stub also makes "two consecutive runs"
-checkable deterministically: a real endpoint gives no such guarantee by itself
-(§4.3's own point — the cache is what supplies it, not the provider).
+require network or credentials. A stub also makes "two consecutive runs"
+checkable deterministically: a real endpoint gives no such guarantee by itself —
+the cache is what supplies it, not the provider.
 
 Around the checkpoint: `build_slot_a_prompt`'s determinism and its exclusion of
 `case_id`, `parse_slot_a_response`'s success and failure paths, `classify_case_llm`'s
-three paths (refresh-miss, refresh-hit, strict-miss), and the session 5.2 interface
+three paths (refresh-miss, refresh-hit, strict-miss), and the interface
 decision itself — that threading a classifier through `run_batch` closes the
-`UNMATCHED_INBOUND_CREDIT` gap session 5.1 left open.
+`UNMATCHED_INBOUND_CREDIT` gap the deterministic baseline left open.
 """
 
 from __future__ import annotations
@@ -109,7 +107,7 @@ def test_prompt_varies_with_evidence() -> None:
 
 def test_prompt_does_not_depend_on_case_id() -> None:
     """Two cases with identical evidence but different IDs must hash to the same cache
-    entry — an internal bookkeeping ID is not evidence (§4.2's boundary)."""
+    entry — an internal bookkeeping ID is not evidence."""
     assert build_slot_a_prompt(_bundle(case_id="case_a")) == build_slot_a_prompt(_bundle(case_id="case_b"))
 
 
@@ -120,13 +118,13 @@ def test_prompt_lists_all_eight_subtype_definitions() -> None:
 
 
 def test_prompt_never_mentions_an_account_code_or_a_posted_narration() -> None:
-    """The boundary `EvidenceBundle` enforces (§4.2: never an account, an amount, or a
+    """The boundary `EvidenceBundle` enforces (never an account, an amount, or a
     postable narration) must survive into the actual text sent to the model.
 
     "credit"/"debit"/"paise" as English words are legitimate vocabulary here — both
     business terms (`UNMATCHED_INBOUND_CREDIT`, "bank credit") and, in the
     instructions themselves, the very sentence telling the model it will never be
-    given one. What must never appear as *data* is an actual §3.2 chart-of-accounts
+    given one. What must never appear as *data* is an actual chart-of-accounts
     code/name or the constant ledger narration `apply.py` posts.
     """
     from pipeline.accounts import CHART_OF_ACCOUNTS
@@ -220,13 +218,13 @@ def test_classify_batch_llm_shares_one_cache_entry_across_identical_bundles(tmp_
     assert len(client.prompts) == 1
 
 
-# --- The session 5.2 interface decision: threading a classifier through `run_batch`. ---
+# --- The interface decision: threading a classifier through `run_batch`. ---
 
 
 def test_no_classifier_reproduces_the_session_5_1_gap_exactly() -> None:
     """`KNOWN_GAPS`' documented shortfall, unchanged when `run_batch` is called the
-    old way (session 5.1's own checkpoint test, re-asserted here as the baseline this
-    module's other tests are a delta against)."""
+    old way (the deterministic baseline's own checkpoint test, re-asserted here as
+    the baseline this module's other tests are a delta against)."""
     _, result = _run()
     assert result.classifications == ()
     # No case was classified at all — not just the 8 that would flip state.
@@ -234,8 +232,8 @@ def test_no_classifier_reproduces_the_session_5_1_gap_exactly() -> None:
 
 
 def test_baseline_classifier_closes_the_eight_case_gap() -> None:
-    """Threading session 5.1's keyword baseline through `run_batch` (session 5.2's
-    interface decision) makes every case land in its §3.5/§3.6 ground-truth state —
+    """Threading the deterministic keyword baseline through `run_batch` (the
+    interface decision) makes every case land in its expected ground-truth state —
     the same 8 cases `tests/test_apply.py`'s checkpoint documents as a gap, closed."""
     batch, result = _run(classifier=classify_batch_baseline)
 
@@ -261,7 +259,7 @@ def test_baseline_classifier_closes_the_eight_case_gap() -> None:
 
 
 def test_classification_does_not_disturb_auto_matched_or_auto_closed_cases() -> None:
-    """The classifier only ever sees non-auto-close cases (§4.2), and wiring it in must
+    """The classifier only ever sees non-auto-close cases, and wiring it in must
     not change the 80 cases outside that population."""
     _, without = _run()
     _, with_classifier = _run(classifier=classify_batch_baseline)
@@ -281,8 +279,8 @@ def test_classified_subtype_is_recorded_even_when_it_does_not_change_state() -> 
 
     It lands on two different states, both correctly: `ABSTAINED` for the 17 orphan/
     settlement-anchored cases with no other evidence at all, and `REVIEW_REQUIRED` for
-    the 17 FR-06/date-error cases session 5.1's Decided section names explicitly — a
-    candidate existed and was declined by policy or confidence *before* classification
+    the 17 policy-excluded/date-error cases the deterministic baseline names
+    explicitly — a candidate existed and was declined by policy or confidence *before* classification
     is ever consulted, so `AMBIGUOUS_CASE` here is the baseline's documented "least-
     wrong answer in a vocabulary with no correct one," not evidence of a bug.
     """
@@ -296,13 +294,13 @@ def test_classified_subtype_is_recorded_even_when_it_does_not_change_state() -> 
     assert "ABSTAINED" in observed_states
 
 
-# --- The session 5.2 checkpoint. ---
+# --- The checkpoint. ---
 
 
 def test_two_consecutive_strict_runs_give_identical_metrics(tmp_path) -> None:
-    """spec.md §6.3's session 5.2 checkpoint, verbatim: 'Two consecutive strict runs
-    give identical metrics.' Phase 5's checkpoint adds: 'The cache is committed. A run
-    with networking disabled succeeds end to end (NFR-05).'
+    """The checkpoint, verbatim: 'Two consecutive strict runs
+    give identical metrics.' And: 'The cache is committed. A run
+    with networking disabled succeeds end to end.'
 
     Modelled here as: populate a committed cache file once (the one-time step a real
     `--llm-cache=refresh` run performs), then run the batch **twice** in
@@ -341,7 +339,7 @@ def test_two_consecutive_strict_runs_give_identical_metrics(tmp_path) -> None:
 
 def test_strict_run_with_an_incomplete_cache_fails_loudly(tmp_path: Path) -> None:
     """A committed cache missing even one of the ~70 prompts must not silently
-    degrade — §4.3: 'a cache miss is a hard error rather than a fallthrough to the API.'"""
+    degrade: a cache miss is a hard error rather than a fallthrough to the API."""
     empty_cache = PromptCache(tmp_path / "empty.json")
     classifier = partial(classify_batch_llm, cache=empty_cache, mode=CacheMode.STRICT, client=None)
     with pytest.raises(CacheMissError):

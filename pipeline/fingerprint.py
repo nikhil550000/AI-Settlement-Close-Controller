@@ -1,19 +1,19 @@
-"""The fingerprint-control statistic, per spec.md §3.5 and §5.3.
+"""The fingerprint-control statistic.
 
-§3.5's fingerprint-control rule names the failure mode: anomalous cases
+The fingerprint-control rule names the failure mode: anomalous cases
 becoming identifiable by *artifact* rather than by *evidence* — sequential
 IDs assigned per scenario, timestamps generated in scenario blocks,
-narration strings unique to one anomaly type. §5.3 promotes the check on
+narration strings unique to one anomaly type. The check is promoted on
 that rule to a reported one: "the metrics JSON carries a pass/fail line
 confirming that no ID ordering or timestamp block correlates with
 scenario."
 
 This module holds the one statistic those checks are built from. It lives
 under `pipeline/` rather than `generator/` for the same reason the
-canonical schemas and the ground-truth schema do (BUILDLOG.md session 1.2,
+canonical schemas and the ground-truth schema do (
 Decided): it is written against in Phase 2 by the generator's checkpoint
 but read in Phase 6 by the eval harness that emits the metrics JSON, and
-`pipeline/` must never import `generator/` (§4.1). It takes plain label
+`pipeline/` must never import `generator/`. It takes plain label
 sequences, so it depends on nothing else in either package.
 
 **What the statistic measures.** Order the batch's cases (or records) by

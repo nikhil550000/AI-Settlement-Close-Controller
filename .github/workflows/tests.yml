@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    # windows-latest deliberately: the committed metrics.json was produced on
+    # Windows, and tests/test_reproduce.py asserts a clean clone reproduces it
+    # byte-identically. Running that assertion on a different platform would
+    # test the platform rather than the pipeline.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # test_reproduce.py runs a real `git clone --local` of this
+          # repository into a temp directory, so it needs real history.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync the locked environment
+        run: uv sync --locked
+
+      - name: Run the suite
+        # No FIREWORKS_API_KEY is set anywhere in this workflow. Every model
+        # call replays from the committed prompt caches, so a green run here
+        # is also evidence that the offline path is real rather than nominal.
+        run: uv run pytest -q

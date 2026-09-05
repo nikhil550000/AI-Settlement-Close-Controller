@@ -2,7 +2,7 @@
 
 The statistic's mean and variance are closed-form (a permutation of a
 fixed label multiset), and the whole fingerprint checkpoint rests on them:
-a wrong variance makes every §3.5 fingerprint assertion either vacuous or
+a wrong variance makes every generator plan fingerprint assertion either vacuous or
 flaky, and neither failure is visible from the assertions themselves. So
 the formulas are checked against a Monte-Carlo of the same null — a
 seeded, self-contained simulation, not a second source of truth about the
@@ -66,7 +66,7 @@ def test_detection_power_grows_with_the_number_of_scenarios():
 
     Worth pinning because it is the statistic's one soft spot: with a
     handful of labels a random permutation *also* produces long same-label
-    runs, so blocking is only a few sigma. The §3.5 populations are many
+    runs, so blocking is only a few sigma. The the generator plan populations are many
     and small, which is the regime where the check bites hardest.
     """
     two = scenario_block_statistic(sorted(_LABEL_MULTISETS["two_labels"]))

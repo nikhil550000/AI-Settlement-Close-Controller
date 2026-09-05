@@ -1,5 +1,5 @@
-"""Session 3.2 checkpoint (spec.md §6.3): "150 cases assemble; orphan
-granularity matches REV-18" — plus targeted unit coverage of each
+""" checkpoint: "150 cases assemble; orphan
+granularity is correct" — plus targeted unit coverage of each
 classification rule `pipeline/case_assembly.py` uses to tell an orphan
 case apart from bank-statement noise.
 """
@@ -198,9 +198,9 @@ def test_150_cases_assemble_with_rev18_orphan_granularity():
 
     two_line = [c for c in orphan_cases if len(c.bank_lines) == 2]
     one_line = [c for c in orphan_cases if len(c.bank_lines) == 1]
-    assert len(two_line) == 3  # REV-18: the three DUPLICATE_CREDIT cases
+    assert len(two_line) == 3  # a later revision: the three DUPLICATE_CREDIT cases
     assert len(one_line) == 22
-    assert sum(len(c.bank_lines) for c in orphan_cases) == 28  # REV-17's ~28 orphan-case-line figure, exactly
+    assert sum(len(c.bank_lines) for c in orphan_cases) == 28  # a revision's ~28 orphan-case-line figure, exactly
 
     all_orphan_line_ids = [line.line_id for c in orphan_cases for line in c.bank_lines]
     assert len(all_orphan_line_ids) == len(set(all_orphan_line_ids))  # no bank line claimed by two cases

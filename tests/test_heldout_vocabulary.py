@@ -16,7 +16,7 @@ goes red, and the ablation has to be re-measured and re-stated rather than
 silently becoming a comparison of two arms that now agree.
 
 Everything here runs offline against the committed `data/semantics_cache.json`
-in `CacheMode.STRICT` with `client=None`, the same way every other NFR-05
+in `CacheMode.STRICT` with `client=None`, the same way every other offline mode
 checkpoint in this codebase discharges its claim against a real artifact rather
 than a stub.
 
@@ -137,7 +137,7 @@ def test_the_llm_arm_recovers_the_held_out_vocabulary_batch_completely() -> None
 def test_both_safety_metrics_hold_on_both_arms_of_the_reference_batch() -> None:
     """Swapping the semantics arm must not move a safety metric.
 
-    §1.3's optimization principle ranks a false match worse than a missed one,
+    The terminal states' optimization principle ranks a false match worse than a missed one,
     so the two primary safety metrics are the ones that must not depend on
     which arm answered a question about English.
     """

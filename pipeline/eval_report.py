@@ -1,41 +1,41 @@
-"""Session 6.2's evaluation artifacts: §5.2's two confusion matrices, the
+"""The evaluation artifacts: the two confusion matrices, the
 per-subtype breakdown, the development-versus-held-out comparison, and the
-§5.5 threshold review.
+threshold review.
 
-Component 9's second half. `pipeline/metrics.py` computes the §1.6 surface
-for one batch; this module is what §5.1, §5.2 and §5.5 ask to be *shown* on
-top of it, as structured data plus a plain-text rendering. Session 6.3's
-Jinja2 HTML (FR-11) renders the same models — the tables here exist so the
-numbers can be read, asserted and pasted into `BUILDLOG.md` before any HTML
+Component 9's second half. `pipeline/metrics.py` computes the metric surface
+for one batch; this module is what turns it into something *shown* on
+top of it, as structured data plus a plain-text rendering. The
+Jinja2 HTML render layer renders the same models — the tables here exist so the
+numbers can be read and asserted before any HTML
 exists, and so the report and the log can never disagree about a figure.
 
 **Three things this module refuses to do.**
 
 1. **It never recomputes a metric.** Every figure it shows comes off a
-   `MetricsReport`, whose denominators session 6.1 hand-checked against
-   §3.6's batch totals. A rendering that re-derives a number it is
+   `MetricsReport`, whose denominators were hand-checked against
+   the batch totals. A rendering that re-derives a number it is
    displaying is a second implementation of the metric, and the two would
    eventually disagree.
 2. **It never joins a run to ground truth by `case_id`.** The join goes
    through `pipeline.metrics.align_ground_truth`, because the generator
    mints orphan case IDs as `orphan_<hex>` and case assembly synthesizes
    `case_orphan_<line_id>` — a `case_id` join silently drops all 25 orphan
-   cases (session 6.1, Broke).
-3. **It never prints a rate without its denominator.** §5.2 requires the
-   per-subtype denominators be visible "rather than as a single headline
-   number", and §3.6 gives the reason: seven subtypes divide 36 cases at
+   cases.
+3. **It never prints a rate without its denominator.** The per-subtype
+   denominators must be visible "rather than as a single headline
+   number", for a clear reason: seven subtypes divide 36 cases at
    roughly five each, so a bare 0.80 hides whether it was 4/5 or 8/10.
 
 **Matrix orientation, stated once and applied everywhere:** rows are ground
 truth, columns are what the system predicted. A row total is therefore a
 recall denominator and a column total a precision denominator, which is
-§1.6's own convention read off the axes.
+the same convention the metrics module reads off the axes.
 
-**On the development/held-out gap (§5.1).** Both batches are reported side
-by side and the gap is printed, "itself a finding … rather than explained
-away". §5.1's rule with teeth applies to whoever *acts* on what they see:
+**On the development/held-out gap.** Both batches are reported side
+by side and the gap is printed, "itself a finding ... rather than explained
+away". The rule with teeth applies to whoever *acts* on what they see:
 any prompt or threshold change made in response to inspecting held-out cases
-MUST be logged in `BUILDLOG.md` with its reason. This module inspects
+must be recorded with its reason. This module inspects
 nothing case by case — it aggregates — but the rule is restated here because
 this is the module through which held-out numbers first become visible.
 """
@@ -64,22 +64,22 @@ from pipeline.metrics import (
     rate,
 )
 
-# --- Confusion matrices (§5.2). ---
+# --- Confusion matrices. ---
 
 
 class ConfusionMatrix(BaseModel):
-    """One §5.2 confusion matrix: rows are ground truth, columns are predicted.
+    """One confusion matrix: rows are ground truth, columns are predicted.
 
     `labels` fixes both axes — the same list in the same order down and
     across — so the diagonal is the agreement and every off-diagonal cell
-    names a specific confusion. Both of §5.2's matrices are square and 5×5 by
-    construction: five §1.3 states, or §3.3's four classes plus `NONE`.
+    names a specific confusion. Both matrices are square and 5x5 by
+    construction: five states, or four classes plus `NONE`.
 
     Absent labels are kept as all-zero rows and columns rather than dropped.
     A matrix that silently loses a state the system never predicted reads as
-    a smaller system, and the empty row is exactly the finding §5.2 wants
-    visible: "where the system is actually wrong rather than a headline that
-    hides it."
+    a smaller system, and the empty row is exactly the finding that needs to be
+    visible: where the system is actually wrong rather than a headline that
+    hides it.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -152,21 +152,21 @@ def _matrix(axis: str, labels: Sequence[str], pairs: Sequence[tuple[str, str]]) 
 
 
 STATE_LABELS: tuple[str, ...] = tuple(str(state) for state in OutcomeState)
-"""§1.3's five terminal states, in §1.3's order."""
+"""The five terminal states, in declaration order."""
 
 EXCEPTION_CLASS_LABELS: tuple[str, ...] = tuple(str(cls) for cls in ExceptionClass)
-"""§3.3's four classes plus the `NONE` sentinel, in §3.3's order — §5.2's second axis."""
+"""The four classes plus the `NONE` sentinel, in declaration order — the second axis."""
 
 
 def build_state_matrix(
     by_outcome: Mapping[str, CaseOutcome], by_truth: Mapping[str, GroundTruthCase]
 ) -> ConfusionMatrix:
-    """§5.2's 5×5 outcome-state confusion matrix.
+    """The 5x5 outcome-state confusion matrix.
 
-    Its diagonal over its total is `state_prediction_accuracy` (§1.6), and
+    Its diagonal over its total is `state_prediction_accuracy`, and
     its row and column totals are `MetricsReport.ground_truth_state_counts`
-    and `.predicted_state_counts` — three figures session 6.1 already
-    computes, which is why the tests assert this matrix against them rather
+    and `.predicted_state_counts` — three figures already
+    computed, which is why the tests assert this matrix against them rather
     than against a second hand count.
     """
     return _matrix(
@@ -182,17 +182,17 @@ def build_state_matrix(
 def build_exception_class_matrix(
     by_outcome: Mapping[str, CaseOutcome], by_truth: Mapping[str, GroundTruthCase]
 ) -> ConfusionMatrix:
-    """§5.2's 5×5 exception-class confusion matrix, over §3.3's four classes plus `NONE`.
+    """The 5x5 exception-class confusion matrix, over the four classes plus `NONE`.
 
     The predicted class is `CaseOutcome.exception_class`, assigned by
     component 8 from evidence (`pipeline.exception_class`) — not derived here
-    from the predicted state. That decision and its reasoning are session
-    6.2's, recorded in `pipeline/exception_class.py`'s module docstring: a
+    from the predicted state. That decision and its reasoning are
+    recorded in `pipeline/exception_class.py`'s module docstring: a
     class the grader invents from the state it is grading turns this matrix
     into a re-rendering of the state matrix.
 
     An unassigned class raises rather than counting as `NONE`. `NONE` is
-    §3.3's positive sentinel for a clean case; "component 8 never labelled
+    the positive sentinel for a clean case; "component 8 never labelled
     this one" is a different fact, and reading the second as the first would
     park every unlabelled case on a diagonal cell and inflate the accuracy.
     """
@@ -200,7 +200,7 @@ def build_exception_class_matrix(
     for case_id, outcome in by_outcome.items():
         if outcome.exception_class is None:
             raise MetricsError(
-                f"case {case_id!r} carries no predicted exception_class; §5.2's class matrix "
+                f"case {case_id!r} carries no predicted exception_class; the class matrix "
                 "needs one per case — outcomes must come from apply_batch, which assigns it"
             )
         pairs.append(
@@ -209,22 +209,22 @@ def build_exception_class_matrix(
     return _matrix("exception_class", EXCEPTION_CLASS_LABELS, pairs)
 
 
-# --- §5.5's provisional targets, transcribed. ---
+# --- The provisional targets, transcribed. ---
 
 
 class TargetKind(StrEnum):
-    """How §5.5's "Provisional target" column is to be read for one metric."""
+    """How the "Provisional target" column is to be read for one metric."""
 
     AT_MOST = "at_most"
     AT_LEAST = "at_least"
     BAND = "band"
     GROUND_TRUTH_COUNT = "ground_truth_count"
-    """§5.5's `≈ 11.3%`, which its own Note says holds "by construction, not by
+    """The `≈ 11.3%` target, which holds "by construction, not by
     performance" — so the check is exact equality with the batch's ground-truth
-    `REVIEW_REQUIRED` population (§3.6's 17 of 150), not a tolerance band. No
-    tolerance is invented, because §5.5 supplies a construction instead."""
+    `REVIEW_REQUIRED` population (17 of 150), not a tolerance band. No
+    tolerance is invented, because the construction supplies one instead."""
     REPORTED = "reported"
-    """§5.5's "reported, no target"."""
+    """"Reported, no target"."""
 
 
 class ThresholdVerdict(StrEnum):
@@ -237,10 +237,10 @@ class ThresholdVerdict(StrEnum):
 
 
 class ThresholdTarget(BaseModel):
-    """One row of §5.5's table, transcribed rather than paraphrased.
+    """One row of the threshold table, transcribed rather than paraphrased.
 
-    Every figure in §5.5 is explicitly provisional and "set properly after
-    the first real run against the development batch"; §5.5's own reason for
+    Every figure here is explicitly provisional and "set properly after
+    the first real run against the development batch"; the reason for
     publishing them early is that "any change must be logged in Section 8
     with its reason, so a moved goalpost is visible rather than silent."
     These literals are that goalpost. Changing one is a Section 8 revision,
@@ -254,9 +254,9 @@ class ThresholdTarget(BaseModel):
     lower: float | None = None
     upper: float | None = None
     target_text: str
-    """§5.5's "Provisional target" cell, verbatim."""
+    """The "Provisional target" cell, verbatim."""
     note: str = ""
-    """§5.5's "Note" cell, verbatim. Empty where §5.5 leaves it empty."""
+    """The "Note" cell, verbatim. Empty where the source leaves it empty."""
 
 
 PROVISIONAL_THRESHOLDS: tuple[ThresholdTarget, ...] = (
@@ -317,7 +317,7 @@ PROVISIONAL_THRESHOLDS: tuple[ThresholdTarget, ...] = (
         lower=0.70,
         upper=0.85,
         target_text="0.70 – 0.85",
-        note="The Slot A metric. Thin per-subtype denominators; read with §5.2's breakdown, not alone",
+        note="The Slot A metric. Thin per-subtype denominators; read with the per-subtype breakdown, not alone",
     ),
     ThresholdTarget(
         metric="exception_subtype_precision_macro",
@@ -333,7 +333,7 @@ PROVISIONAL_THRESHOLDS: tuple[ThresholdTarget, ...] = (
         upper=0.18,
         target_text="operating range 8 – 18%",
         note=(
-            "Ground truth is 11.3% (§3.6). Below 8% suggests the system is forcing calls "
+            "Ground truth is 11.3%. Below 8% suggests the system is forcing calls "
             "it should decline; above 18%, over-abstention degrading value"
         ),
     ),
@@ -350,7 +350,7 @@ PROVISIONAL_THRESHOLDS: tuple[ThresholdTarget, ...] = (
         metric="match_rate",
         kind=TargetKind.REPORTED,
         target_text="reported, no target",
-        note="Not comparable to any industry figure — see the §3.5 enrichment disclosure",
+        note="Not comparable to any industry figure — see the enrichment disclosure",
     ),
     ThresholdTarget(
         metric="value_coverage",
@@ -358,13 +358,13 @@ PROVISIONAL_THRESHOLDS: tuple[ThresholdTarget, ...] = (
         target_text="reported, no target",
     ),
 )
-"""§5.5's table, minus its last row.
+"""The threshold table, minus its last row.
 
 `throughput` and `end_to_end_latency` are omitted because they are not on
-`MetricsReport` at all: session 6.1 put them in `PerformanceMetrics` so the
-committed metrics JSON can reproduce byte-identically on a clean clone
-(§5.6.3), and §5.5 already treats both as "reported, no target" with the
-hardware stated alongside. Nothing else in §5.5's table is dropped.
+`MetricsReport` at all: they live in `PerformanceMetrics` so the
+committed metrics JSON can reproduce byte-identically on a clean clone,
+and both are already treated as "reported, no target" with the
+hardware stated alongside. Nothing else in the table is dropped.
 """
 
 
@@ -373,16 +373,16 @@ TARGETED_METRICS: frozenset[str] = frozenset(
     for target in PROVISIONAL_THRESHOLDS
     if target.kind is not TargetKind.REPORTED
 )
-"""The §5.5 metrics that carry an actual target, as opposed to "reported, no target".
+"""The metrics that carry an actual target, as opposed to "reported, no target".
 
-Derived from the table above rather than listed again, so adding a row to
-§5.5 puts the metric in scope for `BatchComparison.largest_targeted_gap`
+Derived from the table above rather than listed again, so adding a row
+puts the metric in scope for `BatchComparison.largest_targeted_gap`
 automatically.
 """
 
 
 class ThresholdCheck(BaseModel):
-    """One §5.5 target, the measured value, and the verdict — denominator visible."""
+    """One threshold target, the measured value, and the verdict — denominator visible."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -395,12 +395,12 @@ class ThresholdCheck(BaseModel):
 
 
 def named_rates(report: MetricsReport) -> dict[str, Rate | MacroRate]:
-    """Every §1.6 rate on a `MetricsReport`, keyed by its §1.6 name.
+    """Every rate on a `MetricsReport`, keyed by its own name.
 
     One mapping, used by both the threshold review and the
     development-versus-held-out comparison, so a metric can never be reviewed
-    against §5.5 under one name and compared across batches under another.
-    Ordered as §1.6 lists them: matching, adjustment, classification,
+    under one name and compared across batches under another.
+    Ordered as they are naturally grouped: matching, adjustment, classification,
     deferral, value.
     """
     return {
@@ -423,10 +423,10 @@ def named_rates(report: MetricsReport) -> dict[str, Rate | MacroRate]:
 
 
 def review_thresholds(report: MetricsReport) -> tuple[ThresholdCheck, ...]:
-    """§5.5's table, checked against one run's measured values.
+    """The threshold table, checked against one run's measured values.
 
     A verdict is a comparison against a published provisional target, not a
-    judgement about the system: §5.5 states outright that every figure is
+    judgement about the system: every figure is
     provisional and set properly after the first real run against the
     development batch. A metric landing outside its band is a fact to report
     and, if the band moves, a Section 8 revision — not something to tune away
@@ -455,7 +455,7 @@ def review_thresholds(report: MetricsReport) -> tuple[ThresholdCheck, ...]:
                 )
             )
             detail = (
-                f"{measured.numerator} policy declines against §3.6's "
+                f"{measured.numerator} policy declines against "
                 f"{expected} ground-truth REVIEW_REQUIRED cases"
             )
         elif target.lower is not None and value < target.lower:
@@ -470,7 +470,7 @@ def review_thresholds(report: MetricsReport) -> tuple[ThresholdCheck, ...]:
     return tuple(checks)
 
 
-# --- Development versus held-out (§5.1). ---
+# --- Development versus held-out. ---
 
 
 _GAP_PRECISION = 6
@@ -485,7 +485,7 @@ class MetricGap(BaseModel):
     """One metric on both batches, and the gap between them.
 
     `gap` is held-out minus development, so a negative gap is the direction
-    §5.1 cares about — the held-out batch scoring worse than the batch the
+    that matters — the held-out batch scoring worse than the batch the
     prompt and thresholds were set against. `None` on either side (an
     undefined metric) leaves the gap `None` rather than treating the missing
     value as zero.
@@ -504,18 +504,18 @@ class MetricGap(BaseModel):
 
 
 class BatchComparison(BaseModel):
-    """§5.1's side-by-side, and the finding it is meant to expose.
+    """The development-versus-held-out side-by-side, and the finding it is meant to expose.
 
-    §5.1: "Both development and held-out metrics are reported side by side.
+    Both development and held-out metrics are reported side by side.
     **A gap between them is itself a finding** and is printed in the report
-    rather than explained away." This model is that print, and
-    `largest_gap` is the one figure `BUILDLOG.md` records per arm.
+    rather than explained away. This model is that print, and
+    `largest_gap` is the one figure recorded per arm.
     """
 
     model_config = ConfigDict(frozen=True)
 
     arm: str
-    """Which classifier produced these numbers — `baseline` or `slot_a`. §5.4's
+    """Which classifier produced these numbers — `baseline` or `slot_a`. The
     ablation is the same two arms on the same batch, so naming the arm here is
     what lets a later session subtract one comparison from the other."""
     development_seed: int
@@ -525,14 +525,14 @@ class BatchComparison(BaseModel):
     def largest_gap_among(self, metrics: Collection[str]) -> MetricGap | None:
         """The metric in `metrics` that moved most, or `None` if none did.
 
-        **Ties are broken by §1.6's ordering, not by float noise.** Every gap
+        **Ties are broken by the metrics' declared ordering, not by float noise.** Every gap
         here is a difference of two ratios of small integer counts, so exact
         ties are common and meaningful — at seed 1 versus seed 2 on the Slot A
         arm, `state_prediction_accuracy` and `abstention_rate` both move by the
         same two cases in 150, because they are two views of the same two
         cases. Compared as raw floats those two differ in the sixteenth decimal
         place and the winner is whichever way the subtraction rounded, which
-        would make the headline figure in `BUILDLOG.md` unstable for no reason.
+        would make the headline figure unstable for no reason.
         Magnitudes are compared at `_GAP_PRECISION` and the first metric in
         `named_rates`' order wins.
         """
@@ -551,14 +551,14 @@ class BatchComparison(BaseModel):
 
     @property
     def largest_targeted_gap(self) -> MetricGap | None:
-        """The same, restricted to the metrics §5.5 sets a target for.
+        """The same, restricted to the metrics that carry an actual target.
 
-        `value_coverage` and `match_rate` are "reported, no target" in §5.5,
+        `value_coverage` and `match_rate` are "reported, no target",
         and `value_coverage` in particular moves between any two seeds simply
         because the generator drew different amounts — 2.65 points between
         seeds 1 and 2, larger than anything the system does. Reporting that as
         the headline development-versus-held-out gap would bury the finding
-        §5.1 is asking for. Both figures are reported; this is the one that is
+        that matters. Both figures are reported; this is the one that is
         about the system.
         """
         return self.largest_gap_among(TARGETED_METRICS)
@@ -578,11 +578,11 @@ def compare_reports(
     development_seed: int = 1,
     held_out_seed: int = 2,
 ) -> BatchComparison:
-    """§5.1's development-versus-held-out comparison over every §1.6 rate.
+    """The development-versus-held-out comparison over every rate.
 
-    Seeds default to §5.1's own table — development is seed 1, held-out is
+    Seeds default to the standard table — development is seed 1, held-out is
     seed 2 — and are parameters rather than constants because the scale batch
-    (seed 3) and the seed-0 reference batch every prior session measured
+    (seed 3) and the seed-0 reference batch measured
     against are equally legitimate things to compare.
     """
     dev_rates = named_rates(development)
@@ -604,7 +604,7 @@ def compare_reports(
 
 
 class EvalReport(BaseModel):
-    """Everything session 6.2 produces for one batch, ready for 6.3's HTML."""
+    """Everything produces for one batch, ready for 6.3's HTML."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -627,16 +627,16 @@ def build_eval_report(
     bank_line_accounting: BankLineAccounting | None = None,
     attachment: AttachmentAudit | None = None,
 ) -> EvalReport:
-    """The §1.6 surface plus §5.2's matrices and §5.5's review, for one run.
+    """The metric surface plus the confusion matrices and the threshold review, for one run.
 
     One call, one alignment: `compute_metrics` and both matrices are built
     over the same `align_ground_truth` join, so the matrices cannot end up
     describing a different set of cases from the metrics printed beside them.
 
-    `provenance` is passed straight through to `compute_metrics` — session
-    7.2's FR-13 pin (seed, git SHA, model ID, cache hit rate) — and defaults
-    to `None` exactly as `compute_metrics` already does, so every session
-    6.1/6.2 caller of this function is unaffected.
+    `provenance` is passed straight through to `compute_metrics` — the
+    reproducibility pin (seed, git SHA, model ID, cache hit rate) — and defaults
+    to `None` exactly as `compute_metrics` already does, so every existing
+    caller of this function is unaffected.
     """
     by_outcome = {outcome.case_id: outcome for outcome in outcomes}
     by_truth = align_ground_truth(cases, ground_truth)
@@ -662,7 +662,7 @@ def build_eval_report(
 
 
 def _ratio(value: Rate | MacroRate) -> str:
-    """A rate as `value (n/d)`, or `undefined (0/0)` — never a bare float (§5.2).
+    """A rate as `value (n/d)`, or `undefined (0/0)` — never a bare float.
 
     A `MacroRate` renders its two counts as `n of d subtypes` instead, because
     they are a coverage statement about the mean, not the fraction that
@@ -704,16 +704,16 @@ def render_confusion_matrix(matrix: ConfusionMatrix) -> str:
 
 
 def render_subtype_breakdown(report: MetricsReport) -> str:
-    """§5.2's per-subtype table: precision and recall with both denominators visible.
+    """The per-subtype table: precision and recall with both denominators visible.
 
-    §5.2 requires exactly this shape — "reported per subtype with
+    This requires exactly this shape — "reported per subtype with
     denominators visible, plus a macro average across the seven subtypes" —
-    and §3.6 gives the reason it may not be collapsed to a headline: the
+    for a clear reason it may not be collapsed to a headline: the
     seven denominators divide 36 cases at roughly five each.
     """
     width = max(len(str(metric.subtype)) for metric in report.subtype_metrics)
     lines = [
-        "exception subtype  (§5.2, macro over seven subtypes per REV-25)",
+        "exception subtype  (macro over seven subtypes)",
         f"{'subtype':{width}}  {'precision':>20}  {'recall':>20}",
     ]
     for metric in report.subtype_metrics:
@@ -733,11 +733,11 @@ def render_subtype_breakdown(report: MetricsReport) -> str:
 
 
 def render_threshold_review(checks: Sequence[ThresholdCheck]) -> str:
-    """§5.5's table with the measured column filled in, and every figure marked provisional."""
+    """The threshold table with the measured column filled in, and every figure marked provisional."""
     width = max(len(check.target.metric) for check in checks)
     target_width = max(len(check.target.target_text) for check in checks)
     lines = [
-        "§5.5 threshold review  (every target below is provisional — §5.5)",
+        "threshold review  (every target below is provisional)",
         f"{'metric':{width}}  {'target':>{target_width}}  {'measured':>28}  verdict",
     ]
     for check in checks:
@@ -751,7 +751,7 @@ def render_threshold_review(checks: Sequence[ThresholdCheck]) -> str:
 
 
 def render_comparison(comparison: BatchComparison) -> str:
-    """§5.1's side-by-side, with the gap printed rather than explained away."""
+    """The development-versus-held-out side-by-side, with the gap printed rather than explained away."""
     width = max(len(gap.metric) for gap in comparison.gaps)
     lines = [
         f"development (seed {comparison.development_seed}) versus held-out "
@@ -770,14 +770,14 @@ def render_comparison(comparison: BatchComparison) -> str:
         lines.append(f"largest gap: {largest.metric} {largest.gap:+.4f}")
     targeted = comparison.largest_targeted_gap
     if targeted is None:
-        lines.append("largest gap on a §5.5-targeted metric: none")
+        lines.append("largest gap on a targeted metric: none")
     else:
-        lines.append(f"largest gap on a §5.5-targeted metric: {targeted.metric} {targeted.gap:+.4f}")
+        lines.append(f"largest gap on a targeted metric: {targeted.metric} {targeted.gap:+.4f}")
     return "\n".join(lines)
 
 
 def render_eval_report(report: EvalReport) -> str:
-    """One batch's full §5.2/§5.5 rendering, in the order §5.2 introduces them."""
+    """One batch's full evaluation rendering, in the natural reading order."""
     header = f"eval report — arm: {report.arm}"
     if report.seed is not None:
         header += f", seed {report.seed}"

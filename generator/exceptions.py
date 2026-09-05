@@ -73,7 +73,7 @@ adjustment-line shape for consistency — same schema, same unposted-line
 mechanism, only the narration signature differs — rather than inventing a
 second construction with no chart-of-accounts support (the chart of
 accounts is fixed at seven codes, none of them ITC/TDS-specific). Logged
-in BUILDLOG.md, Decided. The strings themselves moved to
+in the session log. The strings themselves moved to
 `generator/narration.py` in session 2.3, which owns every free-text
 string the generator writes.
 """

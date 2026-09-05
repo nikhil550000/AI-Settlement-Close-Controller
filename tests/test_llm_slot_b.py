@@ -1,15 +1,15 @@
-"""Session 5.3's checkpoint (spec.md §6.3):
+""" checkpoint:
 
 > Full run with networking disabled succeeds.
 
-Modelled the same way session 5.2's checkpoint was (`tests/test_llm_slot_a.py`):
+Modelled the same way checkpoint was (`tests/test_llm_slot_a.py`):
 populate a cache once (standing in for a real `--llm-cache=refresh` pass), then run
 Slot B twice in `CacheMode.STRICT` with `client=None` — so a strict pass is
 structurally incapable of reaching a network path, not just conventionally avoiding
 one. The checkpoint test is `test_full_run_with_networking_disabled_succeeds`.
 
 Everything under `LLMClient` here is a stub — never `pipeline.llm_client.FireworksClient`
-— for the same NFR-05 reason session 5.2's suite gives: the automated suite must stay
+— for the same offline mode reason suite gives: the automated suite must stay
 genuinely network-free, and the real-account verification (population against the
 actual Fireworks account) lives in a scratch script, not in `pytest`.
 
@@ -17,7 +17,7 @@ Around the checkpoint: `build_slot_b_prompt`'s determinism and its exclusion of
 `case_id`, `parse_slot_b_response`'s success and failure paths, `narrate_case_llm`'s
 three paths (refresh-miss, refresh-hit, strict-miss), `build_narration_bundles`'
 state filter (only `EXTERNAL_ACTION_REQUIRED` and `ABSTAINED`, never the other three
-terminal states), and the FR-11 `model_generated` label riding on every `CaseNarration`
+terminal states), and the report `model_generated` label riding on every `CaseNarration`
 this module produces.
 """
 
@@ -270,7 +270,7 @@ def test_narrate_batch_llm_shares_one_cache_entry_across_identical_bundles(tmp_p
 
 
 def test_every_produced_narration_is_labelled_model_generated(tmp_path) -> None:
-    """The FR-11 obligation carried as data: every string this module produces is
+    """The the report obligation carried as data: every string this module produces is
     `model_generated = True`, not something a future reporter has to remember."""
     cache = PromptCache(tmp_path / "cache.json")
     client = _StubClient()
@@ -281,11 +281,11 @@ def test_every_produced_narration_is_labelled_model_generated(tmp_path) -> None:
     assert all(r.model_generated is True for r in results)
 
 
-# --- The session 5.3 checkpoint. ---
+# --- The checkpoint. ---
 
 
 def test_full_run_with_networking_disabled_succeeds(tmp_path) -> None:
-    """spec.md §6.3's session 5.3 checkpoint, verbatim: 'Full run with networking
+    """the session checkpoints' checkpoint, verbatim: 'Full run with networking
     disabled succeeds.'
 
     A full run: `run_batch` with a classifier (Slot A's ablation baseline, standing in
@@ -293,7 +293,7 @@ def test_full_run_with_networking_disabled_succeeds(tmp_path) -> None:
     produced the terminal states), then Slot B narration over every
     `EXTERNAL_ACTION_REQUIRED`/`ABSTAINED` case, entirely in `CacheMode.STRICT` with
     `client=None` on the second half — so the run is structurally incapable of
-    reaching a network path, not just conventionally avoiding one (NFR-05).
+    reaching a network path, not just conventionally avoiding one.
     """
     cache_path = tmp_path / "committed_cache.json"
 

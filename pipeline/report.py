@@ -1,21 +1,21 @@
-"""The FR-11 report, per spec.md §1.8, §4.5 and session 6.3 (§6.3).
+"""The report: one self-contained static HTML file.
 
-> **FR-11.** The report is **one self-contained static HTML file** (no
+> The report is **one self-contained static HTML file** (no
 > server, no build step, no external asset fetch) containing all five
-> artifacts from 1.8: metrics table, filterable case log, per-case
+> artifacts: metrics table, filterable case log, per-case
 > evidence and audit-trail drill-down, categorized exception list, and
 > reconciled-ledger diff.
 
-> **Report:** Jinja2 rendering one HTML file with inlined CSS and a JSON
+> Jinja2 rendering one HTML file with inlined CSS and a JSON
 > blob in a `<script>` tag, filtered by vanilla JS. No CDN, no build step,
-> no external fetch (§4.5).
+> no external fetch.
 
-Component 9's second half. `pipeline/metrics.py` computes the §1.6 surface
-and `pipeline/eval_report.py` (session 6.2) turns it into §5.2's matrices,
-the per-subtype breakdown and the §5.5 threshold review — this module
-renders that, plus the other four §1.8 artifacts, into the one file FR-11
-asks for. It recomputes nothing: every number here comes off an
-already-built `EvalReport` or an already-finished `RunResult`.
+Component 9's second half. `pipeline/metrics.py` computes the metric
+surface and `pipeline/eval_report.py` turns it into the confusion
+matrices, the per-subtype breakdown and the threshold review — this module
+renders that, plus the other four artifacts, into the one file this
+project's requirements ask for. It recomputes nothing: every number here
+comes off an already-built `EvalReport` or an already-finished `RunResult`.
 
 **Rendering is server-side; JavaScript only filters.** The case log, the
 exception report, the audit trail and the ledger diff are full Jinja loops
@@ -29,7 +29,7 @@ rendering is what `pytest` can assert against directly: the checkpoint
 right with no browser in the loop, and a table built by client JS is
 invisible to a test that only reads the file. The JSON blob is still
 embedded, in full, in its own `<script type="application/json">` tag —
-FR-11 names it as part of the tech stack, and it is what makes the run's
+it is part of the tech stack, and it is what makes the run's
 own data programmatically inspectable by a reader who opens the console
 rather than reading the rendered tables.
 
@@ -43,10 +43,10 @@ narrations are model output; Jinja's autoescaping (the default here) is
 what stands between that text and the surrounding markup, so a narration
 that happened to contain `</td>` cannot break the table it sits in. The
 two disclosure constants below are the one exception — fixed strings this
-module owns, rendered with `| safe` so the apostrophe in "merchant's" (§5.3)
+module owns, rendered with `| safe` so the apostrophe in "merchant's"
 does not turn into `&#39;` in a report a judge is meant to read as prose.
 
-**No `datetime.now()` anywhere in this module**, per `AGENT.md`'s
+**No `datetime.now()` anywhere in this module**, per this build's
 determinism rule — there is no "generated at" timestamp. The report is a
 pure function of the run's own data (`snapshot_date`, a parameter,
 appears; the wall clock never does), so building it twice from the same
@@ -88,17 +88,18 @@ __all__ = [
     "render_report_html",
 ]
 
-# --- The two disclosures FR-11's report header MUST carry (§5.3, §3.5). ---
+# --- The two disclosures the report header must carry. ---
 
 SYNTHETIC_EVAL_DISCLOSURE = (
     "Ground-truth labels and the records being graded come from one generator. "
     "The evaluation measures whether the pipeline recovers the injected intent; "
     "it does not establish that the injected intent resembles a real merchant's books."
 )
-"""§5.3, verbatim in substance: "required in the README, the FR-11 report header, and
-the pitch video, alongside the anomaly-enrichment disclosure from §3.5." Markdown
-emphasis (`` ` ``, `**`) is dropped — this is HTML, not the spec document, and the
-constant is rendered with `| safe` specifically so its apostrophe survives intact."""
+"""Required in the README, the report header, and the pitch video,
+alongside the anomaly-enrichment disclosure below, verbatim in substance.
+Markdown emphasis (`` ` ``, `**`) is dropped — this is HTML, not a design
+document, and the constant is rendered with `| safe` specifically so its
+apostrophe survives intact."""
 
 ANOMALY_ENRICHMENT_DISCLOSURE = (
     "match_rate on this batch is not comparable to any industry figure. The batch is "
@@ -107,15 +108,16 @@ ANOMALY_ENRICHMENT_DISCLOSURE = (
     "EXTERNAL_ACTION_REQUIRED runs correspondingly high because orphan cases are "
     "unresolvable by construction and are the majority of that state's population."
 )
-"""§3.5's "Anomaly enrichment" disclosure, addressed to this report's reader.
+"""The "Anomaly enrichment" disclosure, addressed to this report's reader.
 
-§3.5 states the requirement in the second person to the *builder* ("the enrichment
-factor MUST be stated in the README, in the report header, and in the pitch video").
-Reproducing that sentence verbatim printed an instruction to the author inside an
-artifact written for a reviewer, and quoted a stale "roughly 21%" beside the live
-figure the template computes two lines below it. The disclosure's *substance* is
-what §3.5 requires be carried; the sentence naming where to carry it is not part
-of the disclosure. The concrete share is rendered from the run, never hardcoded."""
+The underlying requirement states this in the second person to the *builder*
+("the enrichment factor MUST be stated in the README, in the report header,
+and in the pitch video"). Reproducing that sentence verbatim printed an
+instruction to the author inside an artifact written for a reviewer, and
+quoted a stale "roughly 21%" beside the live figure the template computes
+two lines below it. The disclosure's *substance* is what must be carried;
+the sentence naming where to carry it is not part of the disclosure. The
+concrete share is rendered from the run, never hardcoded."""
 
 
 # --- Money, rendered without ever dividing with a float. ---
@@ -124,9 +126,10 @@ of the disclosure. The concrete share is rendered from the run, never hardcoded.
 def format_paise(amount: int) -> str:
     """Integer paise as a signed rupee string — `divmod`, never `/100.0`.
 
-    NFR-04 is about the computation path, not a report's display strings,
-    but there is no reason to reach for a float here either when integer
-    `divmod` gives the exact rupees-and-paise split directly.
+    The integer-only rule is about the computation path, not a report's
+    display strings, but there is no reason to reach for a float here
+    either when integer `divmod` gives the exact rupees-and-paise split
+    directly.
     """
     sign = "-" if amount < 0 else ""
     rupees, paise = divmod(abs(int(amount)), 100)
@@ -172,7 +175,7 @@ class CaseRecord(BaseModel):
     narration_kind: NarrationKind | None
     narration_text: str | None
     narration_model_generated: bool | None
-    """FR-11's labelling obligation, carried as data (§4.2): `True` whenever
+    """The labelling obligation, carried as data: `True` whenever
     `narration_text` is not `None` — every Slot B string is model-generated by
     construction (`pipeline.narration.CaseNarration`) — and `None` when there is
     no narration to label at all."""
@@ -186,8 +189,8 @@ class CaseRecord(BaseModel):
     @property
     def entries_to_audit(self) -> tuple[CandidateJournalEntry, ...]:
         """Artifact 5's population, for one `AUTO_CLOSED` case: what this run actually
-        posted, plus what an earlier run posted and this one recognised as a replay
-        (§1.7.4) — both are the audit trail for why the case is closed."""
+        posted, plus what an earlier run posted and this one recognised as a
+        replay — both are the audit trail for why the case is closed."""
         return self.applied_entries + self.replayed_entries
 
 
@@ -240,7 +243,7 @@ def build_case_records(
 
 
 def ledger_diff(ledger_entries: Sequence[LedgerEntry]) -> tuple[LedgerEntry, ...]:
-    """Artifact 1, as FR-11 names it — a **diff**, not the whole ~5,800-row ledger.
+    """Artifact 1 — a **diff**, not the whole ~5,800-row ledger.
 
     `pipeline.apply.seed_ledger` loads the merchant's own bookkeeping unchanged;
     every row this run adds is a `CONTROLLER_ADJUSTMENT` leg, and nothing else in
@@ -257,7 +260,7 @@ def case_reasoning(record: CaseRecord) -> str:
     Model-generated prose first, when Slot B produced one — it is already exactly
     this. Otherwise the reasoning is assembled from facts the deterministic path
     already computed (never invented here): which policy exclusion fired and why,
-    which safety validation a declined candidate failed, or which §3.3 trigger is
+    which safety validation a declined candidate failed, or which trigger is
     still open. A case with none of those (an `ABSTAINED` case Slot B never saw)
     falls back to the one true statement the pipeline can make about it.
     """
@@ -284,8 +287,8 @@ def case_reasoning(record: CaseRecord) -> str:
 
 
 class ReportContext(BaseModel):
-    """Everything one `<report>...</report>` needs — one batch run's full §1.8
-    surface, ready for `render_report_html`."""
+    """Everything one `<report>...</report>` needs — one batch run's full
+    artifact surface, ready for `render_report_html`."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -381,7 +384,7 @@ details .drill { margin-top: 0.5rem; padding: 0.6rem 0.8rem; background: #f7f8fa
 tr[hidden] { display: none; }
 footer.report-footer { max-width: 1200px; margin: 1.5rem auto 0; padding: 0 2rem;
   color: var(--muted); font-size: 0.8rem; }
-/* The headline band: the four figures §1.6 ranks first, above the tables that
+/* The headline band: the four figures ranked first, above the tables that
    derive them. One grouped object with hairline internal rules rather than four
    floating cards — these four belong together, and the borders should say so. */
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -436,28 +439,28 @@ tr.unaccounted td, p.unaccounted { color: var(--bad); font-weight: 600; }
   <div class="tile {{ 'good' if m.false_match_rate.numerator == 0 else 'bad' }}">
     <div class="stat">{{ m.false_match_rate.numerator }} / {{ m.false_match_rate.denominator }}</div>
     <div class="tile-label">false matches</div>
-    <div class="tile-note">§1.6 primary safety metric &middot; target 0</div>
+    <div class="tile-note">primary safety metric &middot; target 0</div>
   </div>
   <div class="tile {{ 'good' if m.auto_close_precision.value == 1.0 else 'primary' }}">
     <div class="stat">{{ m.auto_close_precision.numerator }} / {{ m.auto_close_precision.denominator }}</div>
     <div class="tile-label">auto-close precision</div>
-    <div class="tile-note">auto-applied entries, not cases (REV-10)</div>
+    <div class="tile-note">auto-applied entries, not cases</div>
   </div>
   <div class="tile neutral">
     <div class="stat">{{ m.abstention_rate.numerator }} / {{ m.abstention_rate.denominator }}</div>
     <div class="tile-label">abstained</div>
-    <div class="tile-note">a designed outcome (§1.3), not a failure</div>
+    <div class="tile-note">a designed outcome, not a failure</div>
   </div>
 </div>
 <p class="summary-note">Read these four before the tables that derive them. Every figure
 is a numerator over its own denominator, and the denominators differ on purpose —
 <code>false_match_rate</code> is over total cases while <code>auto_close_precision</code>
-is over auto-applied entries, so the two are not complements of one another (§1.6).</p>
+is over auto-applied entries, so the two are not complements of one another.</p>
 
 <section id="metrics">
   <h2>1. Metrics report</h2>
-  <p class="section-note">Every figure below is a numerator and a denominator (§5.2) — never a bare
-  float. Every §5.5 target is provisional (§5.5).</p>
+  <p class="section-note">Every figure below is a numerator and a denominator — never a bare
+  float. Every target is provisional.</p>
 
   <div class="table-scroll">
   <table>
@@ -476,7 +479,7 @@ is over auto-applied entries, so the two are not complements of one another (§1
   <h3>Exception-class confusion matrix (rows = ground truth, columns = predicted)</h3>
   {{ render_matrix(context.eval_report.exception_class_matrix) }}
 
-  <h3>Exception subtype precision / recall (macro over seven subtypes, REV-25)</h3>
+  <h3>Exception subtype precision / recall (macro over seven subtypes)</h3>
   <div class="table-scroll">
   <table>
     <thead><tr><th>subtype</th><th>precision</th><th>recall</th></tr></thead>
@@ -491,7 +494,7 @@ is over auto-applied entries, so the two are not complements of one another (§1
   </table>
   </div>
 
-  <h3>§5.5 threshold review (provisional)</h3>
+  <h3>Threshold review (provisional)</h3>
   <div class="table-scroll">
   <table>
     <thead><tr><th>metric</th><th>target</th><th>measured</th><th>verdict</th><th class="wrap">detail</th></tr></thead>
@@ -559,7 +562,7 @@ is over auto-applied entries, so the two are not complements of one another (§1
 <section id="audit-trail">
   <h2>3. Audit trail — AUTO_CLOSED cases</h2>
   <p class="section-note">Invariant 1.7.3: every automatic decision cites the source records and
-  deterministic calculation that justify it, and the specific safety validations passed (§1.7.5).</p>
+  deterministic calculation that justify it, and the specific safety validations passed.</p>
   <div class="table-scroll">
   <table>
     <thead><tr><th>case ID</th><th>template(s)</th><th>cited records</th><th>legs (deterministic)</th><th>validations</th></tr></thead>
@@ -605,7 +608,7 @@ is over auto-applied entries, so the two are not complements of one another (§1
   <h2>4. Exception report</h2>
   <p class="section-note">Every non-AUTO_MATCHED, non-AUTO_CLOSED case, categorized, with a
   recommended next step or an explicit abstention rationale. Text marked
-  <span class="ai-badge">model-generated</span> is Slot B prose over deterministic facts (§4.2) —
+  <span class="ai-badge">model-generated</span> is Slot B prose over deterministic facts —
   never evidence in its own right.</p>
   <div class="table-scroll">
   <table>
@@ -660,7 +663,7 @@ is over auto-applied entries, so the two are not complements of one another (§1
 {% set acct = m.bank_line_accounting %}
 <section id="bank-accounting">
   <h2>6. Bank-line accounting</h2>
-  <p class="section-note">Every §1.6 metric is denominated in <em>cases</em>. This one is
+  <p class="section-note">Every metric above is denominated in <em>cases</em>. This one is
   denominated in <em>source records</em> — which is the gap a bank line reaching no case
   falls through. Each of the batch's {{ acct.total_lines }} bank lines lands in exactly one
   disposition below, and <code>unaccounted</code> must always be empty.</p>
@@ -683,8 +686,8 @@ is over auto-applied entries, so the two are not complements of one another (§1
 
   {% if acct.contested_unawarded_line_ids %}
   <p class="section-note"><strong>{{ acct.contested_unawarded_line_ids | length }} credit(s),
-  {{ paise(acct.contested_unawarded_paise) }}, claimed by more than one settlement at FR-09
-  tier 2 and awarded to none of them</strong> (§4.6: a tie is not a match). This is real money
+  {{ paise(acct.contested_unawarded_paise) }}, claimed by more than one settlement at
+  tier 2 and awarded to none of them</strong> (a tie is not a match). This is real money
   a human must resolve, and it belongs to no case by construction — which is exactly why it is
   reported here rather than left to a case-denominated metric that cannot see it:
   {{ acct.contested_unawarded_line_ids | join(", ") }}.</p>
@@ -745,9 +748,9 @@ is over auto-applied entries, so the two are not complements of one another (§1
 </main>
 
 <footer class="report-footer">
-  Generated by the AI Settlement Close Controller pipeline (spec.md, FR-11). All input data is
-  synthetic (FR-01a). No network dependency other than the LLM inference endpoint, and this file
-  itself fetches nothing (NFR-05).
+  Generated by the AI Settlement Close Controller pipeline. All input data is
+  synthetic. No network dependency other than the LLM inference endpoint, and this file
+  itself fetches nothing.
 </footer>
 
 <script type="application/json" id="report-data">{{ data_json | safe }}</script>
@@ -781,7 +784,7 @@ is over auto-applied entries, so the two are not complements of one another (§1
 
 
 def _render_matrix_html(matrix) -> str:
-    """One §5.2 confusion matrix as an HTML table — the same content
+    """One confusion matrix as an HTML table — the same content
     `pipeline.eval_report.render_confusion_matrix` prints as text, in markup."""
     row_totals = matrix.row_totals()
     column_totals = matrix.column_totals()
@@ -853,15 +856,15 @@ forgotten here raises at render time rather than disappearing from the report.
 
 
 BANK_DISPOSITION_ROWS: tuple[tuple[str, str, str], ...] = (
-    ("settlement_evidence", "settlement evidence", "matched to a settlement by FR-09's cascade"),
-    ("orphan_evidence", "orphan evidence", "evidence on an orphan case (§1.2, §3.6)"),
-    ("contested_unawarded", "contested, unawarded", "claimed by 2+ settlements at tier 2, awarded to none (§4.6)"),
-    ("bank_charge", "bank charge", "§3.6: bank charges stay noise, not cases"),
-    ("self_matched_reversal", "self-matched reversal", "a credit and its own reversal netting to a wash (REV-18)"),
+    ("settlement_evidence", "settlement evidence", "matched to a settlement by the matcher's cascade"),
+    ("orphan_evidence", "orphan evidence", "evidence on an orphan case"),
+    ("contested_unawarded", "contested, unawarded", "claimed by 2+ settlements at tier 2, awarded to none"),
+    ("bank_charge", "bank charge", "bank charges stay noise, not cases"),
+    ("self_matched_reversal", "self-matched reversal", "a credit and its own reversal netting to a wash"),
     ("outbound_noise", "outbound noise", "an ordinary debit to an unrelated party"),
     ("unaccounted", "unaccounted", "reachable by no rule — must always be zero"),
 )
-"""Row order and prose for §6's table, beside the template that renders it.
+"""Row order and prose for the bank-line accounting table, beside the template that renders it.
 
 Keyed by `BankLineDisposition`'s own values rather than re-listing the enum, so
 a disposition added there and forgotten here shows up as a `KeyError` at render
@@ -870,7 +873,7 @@ mode this section exists to prevent."""
 
 
 def render_report_html(context: ReportContext) -> str:
-    """The one self-contained FR-11 HTML file for `context`.
+    """The one self-contained HTML file for `context`.
 
     No CDN, no build step, no external fetch: every byte of CSS and JS in
     `_TEMPLATE` is inline, and the JSON blob is `context`'s own data —
@@ -883,7 +886,7 @@ def render_report_html(context: ReportContext) -> str:
     no_action_count = ground_truth_state_counts.get(str(OutcomeState.AUTO_MATCHED), 0)
     # The headline band's one derived figure. Read off `predicted_state_counts`
     # rather than `total_cases - open_case_rate.numerator` so the tile shows the
-    # two states it names and stays auditable against §5.2's own matrix, instead
+    # two states it names and stays auditable against the confusion matrix, instead
     # of arriving as the complement of a metric defined somewhere else.
     predicted_state_counts = metrics.predicted_state_counts
     auto_resolved_count = predicted_state_counts.get(str(OutcomeState.AUTO_MATCHED), 0) + (

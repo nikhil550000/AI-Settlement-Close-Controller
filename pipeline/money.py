@@ -1,6 +1,6 @@
 """Money primitives shared across the pipeline and generator.
 
-Per AGENT.md's money rule: integer paise end to end, no floats, ever.
+Integer paise end to end, no floats, ever.
 `decimal.Decimal` with ROUND_HALF_UP is permitted only inside the
 generator's fee/GST rounding and must be cast to int immediately there —
 nothing in this module touches floats or Decimal.
@@ -18,7 +18,7 @@ Paise = NewType("Paise", int)
 NonNegPaise = Annotated[Paise, Field(ge=0)]
 """Paise constrained to zero or positive.
 
-Every money field in the canonical schemas (spec.md §3.1) is a magnitude
+Every money field in the canonical schemas is a magnitude
 (a debit leg, a credit leg, a fee, a settlement total) — never a signed
 net figure — so non-negativity is a boundary validation, not an invented
 constraint.
@@ -28,8 +28,8 @@ constraint.
 def rupees_string_to_paise(text: str) -> Paise:
     """Parse a bank-statement rupee string (comma-grouped, up to two decimal places) to paise.
 
-    FR-08's adapter must handle "comma-grouped amount strings" without a
-    float ever touching money (NFR-04). Every rupee figure a bank export
+    The adapter must handle comma-grouped amount strings without a
+    float ever touching money. Every rupee figure a bank export
     prints already carries at most two decimal places, so this is exact
     string arithmetic — split on the decimal point, pad the fractional
     part to two digits — never a float or `Decimal` parse.

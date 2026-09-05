@@ -1,8 +1,7 @@
-"""The validator, per spec.md §4.1 component 7.
+"""The validator: the safety-validation chain plus both validation layers
+for account/direction checking.
 
-> **Validator.** The invariant 1.7.5 chain plus both §3.4 validation layers.
-
-Invariant 1.7.5, in full:
+The safety-validation invariant, in full:
 
 > **Any failed safety validation prevents auto-action.** Validations
 > applied to every candidate JV before it reaches `AUTO_CLOSED`:
@@ -20,27 +19,28 @@ Five of the six run here. The sixth — the post-adjustment residual — is a
 statement about the ledger *after* the entry lands, so it runs in
 `pipeline.apply` where the write happens, inside the transaction that the
 answer decides whether to keep. It is named in `ValidationCheck` all the
-same, so the chain reads as one list in the audit trail (§1.8) rather
-than as five checks plus an unlabelled afterthought.
+same, so the chain reads as one list in the audit trail rather than as
+five checks plus an unlabelled afterthought.
 
-**§3.4's two layers are separate checks, not one.** The per-template
-layer ("each template declares an allowed debit-account set, an allowed
-credit-account set") cannot catch a malformed template — "a broken
-template passes its own rules by definition" — so the global
+**The two account-checking layers are separate checks, not one.** The
+per-template layer ("each template declares an allowed debit-account set,
+an allowed credit-account set") cannot catch a malformed template — a
+broken template passes its own rules by definition — so the global
 account-direction allowlist runs beside it as an independent guard. Both
-are transcribed here from §3.4 rather than derived from
+are transcribed here directly, rather than derived from
 `TEMPLATE_LEG_ACCOUNTS`: deriving the direction table from the very
-tables it exists to check would make it decorative, which is exactly the
-failure §3.4 calls out. The overlap between them is the point.
+tables it exists to check would make it decorative, which defeats the
+point of having a second, independent layer. The overlap between them is
+the point.
 
-**Ordering.** §3.4 requires that "any candidate entry using an account
-outside the seven, or in a direction outside this table, is rejected
-before the balance check runs", so the account checks precede the balance
-check in `ValidationCheck`'s declared order and in every report. Every
-check nonetheless *runs*, and every result is recorded: §1.8's audit
-trail is "the specific safety validations passed", which a chain that
-short-circuits on the first failure cannot produce. `passed` is the
-conjunction, so nothing is weakened by evaluating the rest.
+**Ordering.** Any candidate entry using an account outside the seven, or
+in a direction outside this table, must be rejected before the balance
+check runs, so the account checks precede the balance check in
+`ValidationCheck`'s declared order and in every report. Every check
+nonetheless *runs*, and every result is recorded: the audit trail records
+the specific safety validations passed, which a chain that short-circuits
+on the first failure cannot produce. `passed` is the conjunction, so
+nothing is weakened by evaluating the rest.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ from pipeline.schemas import LedgerEntry, LedgerSource
 
 
 class PostingDirection(StrEnum):
-    """§3.4's global account-direction allowlist, as the three values that table uses."""
+    """The global account-direction allowlist, as the three values that table uses."""
 
     DEBIT_ONLY = "debit only"
     CREDIT_ONLY = "credit only"
@@ -83,21 +83,22 @@ ACCOUNT_DIRECTIONS: dict[str, PostingDirection] = {
     ACCOUNT_RAZORPAY_CLEARING.code: PostingDirection.BOTH,
     ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS.code: PostingDirection.BOTH,
 }
-"""§3.4's second validation layer, transcribed row for row.
+"""The second validation layer, transcribed row for row.
 
 `Bank Account` is credit-only because in v1 only `T-04` touches it, and
-`T-04` credits it — §3.4 states both the rule and that reason. The two
-`both`-permitted accounts are the ones §3.4 keeps safe by splitting
-family 5 into `T-05` and `T-06`: bidirectional *across* templates, one
-fixed direction *within* each, which the per-template layer enforces.
+`T-04` credits it — both the rule and the reason are captured here. The
+two `both`-permitted accounts are the ones kept safe by splitting family 5
+into `T-05` and `T-06`: bidirectional *across* templates, one fixed
+direction *within* each, which the per-template layer enforces.
 """
 
 TEMPLATE_ALLOWLIST: frozenset[TemplateId] = frozenset(TEMPLATE_LEG_ACCOUNTS)
-"""§1.7.5's "selected template is in the allowlist" — §3.4's six, and nothing else."""
+"""The "selected template is in the allowlist" check — the six templates, and nothing else."""
 
 
 class ValidationCheck(StrEnum):
-    """§1.7.5's chain plus §3.4's global layer, in the order §3.4 requires them reported."""
+    """The safety-validation chain plus the global account-direction layer,
+    in the order they must be reported."""
 
     ACCOUNT_IN_CHART = "account_in_chart_of_accounts"
     ACCOUNT_DIRECTION_PERMITTED = "account_direction_permitted"
@@ -112,7 +113,7 @@ class ValidationCheck(StrEnum):
 
 
 class CheckResult(BaseModel):
-    """One validation's verdict and the reason for it, for §1.8's audit trail."""
+    """One validation's verdict and the reason for it, for the audit trail."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -122,7 +123,7 @@ class CheckResult(BaseModel):
 
 
 class ValidationReport(BaseModel):
-    """Every 1.7.5 check run against one candidate entry."""
+    """Every safety-validation check run against one candidate entry."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -141,14 +142,14 @@ class ValidationReport(BaseModel):
 
 
 def resolution_id_for(template_id: TemplateId) -> str:
-    """§3.4: "`resolution_id` is unique per `(case_id, template_id)`".
+    """"`resolution_id` is unique per `(case_id, template_id)`".
 
     A function of the template alone, which makes it unique *within* a
     case — the case is named by the `case_id` column beside it, so
     repeating it here would only duplicate the key's other half. Derived
     rather than minted so that reprocessing the same case reconstructs the
     identical id and collides with its own prior posting, which is what
-    makes invariant 1.7.4's constraint bite (REV-24).
+    makes the idempotency constraint bite.
     """
     return f"res_{template_id.value}"
 
@@ -158,7 +159,7 @@ def _check_accounts_in_chart(candidate: CandidateJournalEntry) -> CheckResult:
     return CheckResult(
         check=ValidationCheck.ACCOUNT_IN_CHART,
         passed=not unknown,
-        detail="" if not unknown else f"accounts outside §3.2's seven: {unknown}",
+        detail="" if not unknown else f"accounts outside the chart of accounts' seven: {unknown}",
     )
 
 
@@ -184,7 +185,7 @@ def _check_template_allowlisted(candidate: CandidateJournalEntry) -> CheckResult
     return CheckResult(
         check=ValidationCheck.TEMPLATE_ALLOWLISTED,
         passed=allowed,
-        detail="" if allowed else f"{candidate.template_id} is not one of §3.4's six templates",
+        detail="" if allowed else f"{candidate.template_id} is not one of the six allowlisted templates",
     )
 
 
@@ -230,7 +231,7 @@ def _check_cited_records_exist(candidate: CandidateJournalEntry, known_record_id
         return CheckResult(
             check=ValidationCheck.CITED_RECORDS_EXIST,
             passed=False,
-            detail="entry cites no source record (§1.7.3 forbids an unsourced auto-action)",
+            detail="entry cites no source record (an unsourced auto-action is forbidden)",
         )
     missing = sorted(set(candidate.cited_record_ids) - known_record_ids)
     return CheckResult(
@@ -288,7 +289,7 @@ def index_controller_adjustments(entries: Sequence[LedgerEntry]) -> dict[str, tu
 
 
 def posted_resolution_pairs(entries: Sequence[LedgerEntry]) -> frozenset[tuple[str, str]]:
-    """Every `(case_id, resolution_id)` already present in the ledger — §1.7.5's idempotency key."""
+    """Every `(case_id, resolution_id)` already present in the ledger — the idempotency key."""
     return frozenset(
         (entry.case_id, entry.resolution_id)
         for entry in entries
@@ -303,7 +304,7 @@ def validate_candidate(
     adjustments_by_reference: Mapping[str, Sequence[LedgerEntry]],
     posted_pairs: frozenset[tuple[str, str]],
 ) -> ValidationReport:
-    """Run §1.7.5's chain (less the residual) and §3.4's two layers against one candidate."""
+    """Run the safety-validation chain (less the residual) and both account-checking layers against one candidate."""
     resolution_id = resolution_id_for(candidate.template_id)
     return ValidationReport(
         case_id=candidate.case_id,
@@ -326,9 +327,9 @@ def batch_record_ids(
     cases: Sequence[Case],
     ledger_entries: Sequence[LedgerEntry],
 ) -> frozenset[str]:
-    """Every source-record ID a candidate may legitimately cite (§1.7.5's "exist").
+    """Every source-record ID a candidate may legitimately cite (the "exist" check).
 
-    The three kinds a §3.4 predicate can cite: a `recon_line.entity_id`, a
+    The three kinds a predicate can cite: a `recon_line.entity_id`, a
     `settlement.id`, and a `ledger_entry.journal_entry_id` (`T-04` cites
     the premature bank debit it reclassifies). Bank line IDs are included
     because orphan subtype triggers cite them, though no template does.

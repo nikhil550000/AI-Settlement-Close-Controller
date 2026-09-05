@@ -2,10 +2,10 @@
 
 **The defect this file guards.** `data/contested/` shipped with Rs 12,693.20 of
 real bank credit attached to nothing. Four credits narrate the gateway, so
-`assemble_orphan_cases` excluded them from orphan consideration; FR-09 tier-2
+`assemble_orphan_cases` excluded them from orphan consideration; tier-2
 demotion then dropped them from every settlement that had claimed them. The
 money was in no case, no metric and no report, and **no test could see it**,
-because every §1.6 metric is denominated in cases and a bank line that reaches
+because every graded metric is denominated in cases and a bank line that reaches
 no case is invisible to all of them. The README carried it as a known
 limitation for exactly this reason: it was found by reading, not by failing.
 
@@ -68,7 +68,7 @@ def test_the_partition_is_total_on_every_committed_batch(batch_name):
     """Every bank line lands in exactly one disposition, and none lands in `UNACCOUNTED`.
 
     This is the assertion the Rs 12,693.20 defect would have failed. It is
-    parametrised over every committed batch rather than the one that exhibited
+    parametrised over every committed batch rather than one that exhibited
     the bug, because the point is the invariant, not the fixture.
     """
     accounting, bank_lines, _ = _accounting(batch_name, KEYWORD)
@@ -87,7 +87,7 @@ def test_the_contested_credits_are_named_not_dropped():
     """The regression, stated as the money it moves.
 
     On the keyword arm all four contested credits are unawarded — correctly, since
-    no §4.6 tier can say which settlement owns one. What must never happen again is
+    no tier can say which settlement owns one. What must never happen again is
     them being unawarded *and* uncounted.
     """
     accounting, _, _ = _accounting("contested", KEYWORD)
@@ -114,7 +114,7 @@ def test_a_contested_credit_reaches_the_case_that_claimed_it():
 
     assert len(claimants) == 8, "two settlements contend for each of the four credits"
     for case in claimants:
-        assert case.bank_lines == (), "a demoted claimant is matched to nothing"
+        assert case.bank_lines == () , "a demoted claimant is matched to nothing"
         assert all(line.deposit_paise > 0 for line in case.contested_bank_lines)
 
     carried = {line.line_id for case in claimants for line in case.contested_bank_lines}
@@ -155,7 +155,7 @@ def test_the_reference_batch_has_no_contention_and_is_unaffected():
     inside one window essentially never occurs — which is why the defect survived
     602 tests and six seeds. Pinned so that a generator change introducing
     contention into the reference batch is a visible event rather than a silent
-    shift in every §1.6 denominator.
+    shift in every metric denominator.
     """
     accounting, _, cases = _accounting("reference", KEYWORD)
 

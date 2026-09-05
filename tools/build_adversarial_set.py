@@ -53,7 +53,7 @@ Every fee is exactly 2% of its gross amount and every tax exactly 18% of
 its fee, chosen so both percentages land on an exact paise integer with no
 rounding — e.g. gross 100000 paise x 2% = 2000 paise fee, x 18% = 360 paise
 tax — so `decimal.Decimal`/`ROUND_HALF_UP` (the generator's own rounding
-tool, per AGENT.md's money rule) is not needed here at all: every figure
+tool, to keep money in integer paise) is not needed here at all: every figure
 below is already exact integer paise, picked by hand.
 
 ## Dates

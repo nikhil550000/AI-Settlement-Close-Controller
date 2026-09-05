@@ -1,15 +1,15 @@
-"""Where every bank line went, per spec.md §1.2 and §3.6.
+"""Where every bank line went.
 
 **Why this module exists.** `data/contested/` shipped with Rs 12,693.20 of real
 bank credit attached to nothing: four credits that narrate the gateway, so
-`assemble_orphan_cases` never considered them, and that after FR-09 tier-2
+`assemble_orphan_cases` never considered them, and that after tier-2
 demotion no settlement held either. The money was in no case, no metric and no
 report. Nothing was *wrong* — every individual decision was correct and safe —
 but the batch quietly stopped adding up, and no test could see it, because every
-metric in §1.6 is denominated in **cases** and a bank line that reaches no case
+scoring metric is denominated in **cases** and a bank line that reaches no case
 is a line no case-denominated metric can count.
 
-That is the failure mode this module closes. It is not a §1.6 metric and does
+That is the failure mode this module closes. It is not a scoring metric and does
 not grade anything against ground truth: it is a **partition proof**. Every
 bank line in the batch lands in exactly one disposition, the dispositions are
 exhaustive by construction, and `UNACCOUNTED` is the bucket that must always be
@@ -41,28 +41,28 @@ class BankLineDisposition(StrEnum):
     """Where one bank line ended up. Exhaustive: every line gets exactly one."""
 
     SETTLEMENT_EVIDENCE = "settlement_evidence"
-    """Matched to a settlement-anchored case by FR-09's cascade."""
+    """Matched to a settlement-anchored case by the matcher's cascade."""
 
     ORPHAN_EVIDENCE = "orphan_evidence"
-    """Evidence on an orphan case (§1.2, §3.6)."""
+    """Evidence on an orphan case."""
 
     CONTESTED_UNAWARDED = "contested_unawarded"
     """Claimed by two or more settlements at tier 2 and awarded to none of them
-    (§4.6: "a tie is not a match"). Real money, deliberately unattached, and the
+    (a tie is not a match). Real money, deliberately unattached, and the
     bucket this module was written for. A non-zero count here is not a bug — it
     is the correct outcome of genuinely ambiguous evidence — but it must be
     *visible*, because each of these is a rupee amount a human has to resolve."""
 
     BANK_CHARGE = "bank_charge"
-    """§3.6: "Bank charges stay noise, not cases."."""
+    """Bank charges stay noise, not cases."""
 
     SELF_MATCHED_REVERSAL = "self_matched_reversal"
-    """A credit and its own reversal netting to a wash inside one statement
-    (REV-18) — neither line is a candidate for anything else."""
+    """A credit and its own reversal netting to a wash inside one statement —
+    neither line is a candidate for anything else."""
 
     OUTBOUND_NOISE = "outbound_noise"
-    """An ordinary outbound debit to an unrelated party. Nothing in §3.6 makes
-    an outbound-only line a case."""
+    """An ordinary outbound debit to an unrelated party. An outbound-only
+    line never becomes a case."""
 
     UNACCOUNTED = "unaccounted"
     """Reachable by no rule above. **Must always be empty.** This is the bucket
@@ -75,7 +75,7 @@ class BankLineAccounting(BaseModel):
     `credit_paise` sums `deposit_paise` only. A debit's magnitude is not money
     the reconciliation is responsible for placing, and mixing the two directions
     into one figure would produce a number that means nothing — the same reason
-    §1.6's `value_coverage` is denominated the way it is.
+    `value_coverage` is denominated the way it is.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -85,7 +85,7 @@ class BankLineAccounting(BaseModel):
     a bucket that vanishes when empty is a bucket nobody notices reappearing."""
 
     credit_paise: dict[str, int]
-    """Integer paise of `deposit_paise` per disposition (NFR-04)."""
+    """Integer paise of `deposit_paise` per disposition."""
 
     contested_unawarded_line_ids: tuple[str, ...]
     """Sorted, so the report can name the specific credits a human must resolve."""

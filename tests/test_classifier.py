@@ -1,4 +1,4 @@
-"""Session 5.1's checkpoint (spec.md §6.3):
+""" checkpoint:
 
 > Baseline classifies all ~70 non-auto-close cases without crashing.
 
@@ -83,7 +83,7 @@ def test_baseline_classifies_every_non_auto_close_case_without_crashing() -> Non
 
     eligible = non_auto_close_case_ids(result.outcome.outcomes)
 
-    assert len(eligible) == 70, "§3.6's batch totals: 150 - 30 AUTO_MATCHED - 50 AUTO_CLOSED = 70"
+    assert len(eligible) == 70, "the orphan populations' batch totals: 150 - 30 AUTO_MATCHED - 50 AUTO_CLOSED = 70"
     assert set(results_by_case) == eligible
     for classification in results_by_case.values():
         assert isinstance(classification.subtype, SubtypeLabel)
@@ -156,7 +156,7 @@ def test_baseline_falls_through_to_ambiguous_on_opaque_orphan_narration() -> Non
 
 
 def test_baseline_falls_through_to_ambiguous_on_settlement_anchored_ambiguous_cases() -> None:
-    """The 9 settlement-anchored `ambiguous` cases (§3.5): no trigger fires, and the
+    """The 9 settlement-anchored `ambiguous` cases: no trigger fires, and the
     case is not an orphan, so branch 2 never applies — only branch 3's fallthrough can
     reach `AMBIGUOUS_CASE` here, and it is the ground-truth-correct answer for this
     population specifically (unlike the 17 REVIEW_REQUIRED cases documented in the
@@ -172,7 +172,7 @@ def test_baseline_falls_through_to_ambiguous_on_settlement_anchored_ambiguous_ca
 
 def test_baseline_cannot_get_policy_excluded_corrections_right_by_construction() -> None:
     """Documents the known gap rather than asserting a correct answer that does not
-    exist: family-4 date-error and FR-06 tax cases are `ACCOUNTING_CORRECTION` in
+    exist: family-4 date-error and the policy exclusions tax cases are `ACCOUNTING_CORRECTION` in
     ground truth, a class Slot A's eight-value enum has no member for."""
     batch, run_result, results_by_case = _classify()
     ground_truth = _ground_truth_by_case_id(batch)

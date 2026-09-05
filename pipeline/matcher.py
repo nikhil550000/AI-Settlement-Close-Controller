@@ -1,4 +1,4 @@
-"""The matcher, per spec.md §4.1 component 3 and §4.6 (FR-09 UTR fallback matching).
+"""The matcher: a four-tier UTR-then-amount fallback cascade for settlement-anchored cases.
 
 A four-tier cascade, first hit wins, run once per settlement-anchored
 `Case` against the full `bank_lines` pool (case assembly's Razorpay-
@@ -13,11 +13,12 @@ here):
 | 2 | A credit's `deposit_paise` equals `settlement.amount` exactly, `value_date` inside the T+2 window plus one slack day, and it is the only such candidate |
 | 3 | No match |
 
-**Tier 0 vs tier 1, concretely.** §4.6's tier 0 text and `generator/narration.py`'s
-own `UtrShape` docstring both leave "token" ambiguous on purpose ("EMBEDDED sits
-between tier 0 and tier 1 depending on how the matcher tokenizes... session 3.3's
-call to make"). This module resolves it using the *same* contrast the generator's
-shape definitions draw: `CLEAN` is "delimited by whitespace on both sides" and
+**Tier 0 vs tier 1, concretely.** The tier-0 rule and `generator/narration.py`'s
+own `UtrShape` docstring both leave "token" ambiguous on purpose — EMBEDDED sits
+between tier 0 and tier 1 depending on how the matcher tokenizes, and this
+module's job is to make that call. It resolves it using the *same* contrast the
+generator's shape definitions draw: `CLEAN` is "delimited by whitespace on both
+sides" and
 `EMBEDDED` is "delimited by punctuation inside a longer run". So tier 0 splits the
 narration on whitespace only and requires one whole whitespace-delimited word to
 equal the UTR after stripping punctuation from it — `CLEAN` always satisfies this
@@ -31,9 +32,9 @@ for its reference-token pairing rule — which isolates the UTR (or its truncate
 prefix) out of both `EMBEDDED` and `TRUNCATED` narrations.
 
 **Tier 2's residual is forced to 0 paise when it lands inside the settlement
-window** — see `_apply_timing_rule`. §3.3's timing-residual rule is stated as a
-rule *the matcher* needs ("or it will compute a non-zero residual and never emit
-`AUTO_MATCHED`"), not a downstream classifier: a tier-3 case still inside the T+2
+window** — see `_apply_timing_rule`. The timing-residual rule is a rule *the
+matcher* needs — or it will compute a non-zero residual and never emit
+`AUTO_MATCHED` — not a downstream classifier: a tier-3 case still inside the T+2
 working-day window is the "correct state of the world," and reporting its full
 settlement amount as an unresolved gap would be wrong evidence, not merely an
 unclassified one. Past the window, the residual is the full `settlement.amount` —
@@ -45,9 +46,9 @@ whose deposit differs from the settlement header (`SETTLEMENT_AMOUNT_MISMATCH`) 
 supposed to leave that gap visible for the predicate evaluator (component 4) to
 find, not have the matcher paper over it.
 
-**The cascade itself is entirely deterministic** — no RNG, no model call, per
-§4.2 ("everything else is deterministic, including... the full FR-09 cascade").
-`match_cases` adds exactly one question that is not: when two settlements
+**The cascade itself is entirely deterministic** — no RNG, no model call;
+everything on the money path is deterministic, including the full matcher
+cascade. `match_cases` adds exactly one question that is not: when two settlements
 contest the same credit at tier 2, it asks `NarrationSemantics` which one the
 narration names. Under the default `KeywordSemantics` the answer is always
 `None` and the contested settlements simply abstain, so the cascade's behaviour
@@ -69,13 +70,13 @@ from pipeline.semantics import KEYWORD, ContestedCandidate, NarrationSemantics
 from pipeline.timing import is_within_settlement_window, settlement_window_deadline
 
 _TOKEN_RE = re.compile(r"[A-Z0-9]{8,}")
-"""§4.6 tier 1's own token shape, shared with `pipeline/case_assembly.py`'s
+"""Tier 1's own token shape, shared with `pipeline/case_assembly.py`'s
 `_REFERENCE_TOKEN_RE`: an alphanumeric run of length >= 8."""
 
 _TIER1_MIN_LENGTH = 8
 
 _TIER2_SLACK_DAYS = 1
-"""§4.6 tier 2: "inside the T+2 working-day window plus one slack day"."""
+"""Tier 2: inside the T+2 working-day window plus one slack day."""
 
 
 class MatchTier(IntEnum):
@@ -140,13 +141,13 @@ def _tier2_candidates(settlement: Settlement, bank_lines: Sequence[BankLine], wi
 
 
 def _apply_timing_rule(settlement_amount: int, *, in_window: bool) -> int:
-    """§3.3's timing-residual rule: a tier-3 case still inside the window is the
+    """The timing-residual rule: a tier-3 case still inside the window is the
     *correct* state of the world, so its residual reports as 0, not as a gap."""
     return 0 if in_window else settlement_amount
 
 
 def match_settlement_anchored_case(case: Case, bank_lines: Sequence[BankLine], *, snapshot_date: date) -> Case:
-    """Run the FR-09 cascade for one settlement-anchored case; pass an orphan case through untouched."""
+    """Run the matcher cascade for one settlement-anchored case; pass an orphan case through untouched."""
     if case.kind is not CaseKind.SETTLEMENT_ANCHORED:
         return case
     settlement = case.settlement
@@ -168,7 +169,7 @@ def match_settlement_anchored_case(case: Case, bank_lines: Sequence[BankLine], *
     tier2 = _tier2_candidates(settlement, bank_lines, window_end)
     if len(tier2) == 1:
         return _matched(case, tier2, MatchTier.AMOUNT_AND_WINDOW, settlement)
-    # len(tier2) > 1 is a tie: §4.6 "a tie is not a match; it routes to ambiguity" — falls through to tier 3.
+    # len(tier2) > 1 is a tie: a tie is not a match, it routes to ambiguity — falls through to tier 3.
 
     in_window = is_within_settlement_window(_settlement_created_date(settlement), snapshot_date)
     residual = _apply_timing_rule(int(settlement.amount), in_window=in_window)
@@ -220,7 +221,7 @@ def match_cases(
 ) -> list[Case]:
     """Run the cascade over every case, then resolve tier-2 contention across them.
 
-    **§4.6's tie rule has to be applied twice, and only one of them was.**
+    **The tie rule has to be applied twice, and only one of them was.**
     `match_settlement_anchored_case` enforces "a tie is not a match" *within* one
     settlement's candidate list (`len(tier2) == 1`), because that is the tie the
     cascade can see from inside a single case. But tier 2's key — an exact amount
@@ -230,7 +231,7 @@ def match_cases(
     candidate credit, each match it at tier 2, each report `residual_paise = 0`,
     and both reach `AUTO_MATCHED` on the strength of one bank credit that can
     belong to at most one of them. That is a guaranteed false match, and
-    `false_match_rate` is §1.6's primary safety metric for exactly this.
+    `false_match_rate` is this pipeline's primary safety metric for exactly this.
 
     It survived 592 tests and six seeds because `generator/clean.py` draws payment
     amounts lognormally, so an exact collision between two settlements in the same
@@ -238,13 +239,13 @@ def match_cases(
     `data/contested/` is the batch that does, and `tests/test_contested.py` pins
     this.
 
-    The resolution is the one §4.6 already states — "a tie is not a match; it
-    routes to ambiguity" — applied to the contended line: every settlement
-    claiming it falls back to tier 3, under the same §3.3 timing rule any other
+    The resolution is the same rule already stated above — "a tie is not a match;
+    it routes to ambiguity" — applied to the contended line: every settlement
+    claiming it falls back to tier 3, under the same timing rule any other
     tier-3 case gets. Abstaining on both is correct rather than merely safe: the
     evidence genuinely does not say which settlement the credit belongs to, and
-    §1.3's optimization principle ranks a false match strictly worse than a
-    deferral.
+    this pipeline's optimization principle ranks a false match strictly worse than
+    a deferral.
     """
     matched = [match_settlement_anchored_case(case, bank_lines, snapshot_date=snapshot_date) for case in cases]
     contested = _contested_tier2_line_ids(matched)
@@ -253,7 +254,7 @@ def match_cases(
 
     # One question per contended line, asked once: which settlement does the
     # narration say this credit pays? `KeywordSemantics` always answers `None`
-    # (§4.6 has no tier that can read it), so the keyword arm's behaviour is
+    # (no tier can read it), so the keyword arm's behaviour is
     # exactly the abstention above and nothing below changes it.
     winners: dict[str, str] = {}
     for line_id in sorted(contested):
@@ -309,7 +310,7 @@ def match_cases(
 
 
 def match_tier_distribution(cases: Sequence[Case]) -> dict[int, int]:
-    """The count of matches at each tier (§4.6), settlement-anchored cases only."""
+    """The count of matches at each tier, settlement-anchored cases only."""
     counts: dict[int, int] = {}
     for case in cases:
         if case.match_tier is None:

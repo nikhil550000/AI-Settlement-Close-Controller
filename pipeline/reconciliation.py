@@ -1,63 +1,64 @@
-"""Re-reconciliation: the residual invariant 1.7.5's last check measures.
+"""Re-reconciliation: the residual the last safety-validation check measures.
 
 > - post-adjustment residual equals 0 paise on re-reconciliation.
 
-**§1.7.5 names this residual but never defines it, and the definition is
-load-bearing**, so it is derived here rather than assumed.
+**The residual this check needs was never defined elsewhere, and the
+definition is load-bearing**, so it is derived here rather than assumed.
 
-The spec's only *defined* notion of "residual" is the matcher's
-(`Case.residual_paise`, §4.1 component 3): settlement amount minus the
-bank deposits that matched it. That reading cannot be the one §1.7.5
-means. Family 4's hard precondition (§3.2, REV-15) is that **no bank
-credit matching the settlement exists** — that is what makes the ledger's
-`Bank Account` debit premature — so a family-4 case's matcher residual is
-the full settlement amount whenever the settlement window has also
-elapsed, and no journal entry can move it: the money genuinely has not
-arrived. Measured on the seed-0 reference batch, 7 of the 10 family-4
-cases sit in exactly that position. Under the matcher reading those 7
-could never reach `AUTO_CLOSED`, contradicting §3.5's case-allocation
-table, which assigns all 10 to it.
+The only other *defined* notion of "residual" in this system is the
+matcher's (`Case.residual_paise`): settlement amount minus the bank
+deposits that matched it. That reading cannot be the one this check
+means. Family 4's hard precondition is that **no bank credit matching the
+settlement exists** — that is what makes the ledger's `Bank Account`
+debit premature — so a family-4 case's matcher residual is the full
+settlement amount whenever the settlement window has also elapsed, and no
+journal entry can move it: the money genuinely has not arrived. Measured
+on the seed-0 reference batch, 7 of the 10 family-4 cases sit in exactly
+that position. Under the matcher reading those 7 could never reach
+`AUTO_CLOSED`, contradicting the case-allocation design, which assigns
+all 10 to it.
 
 **The residual is therefore books-versus-evidence, not bank-versus-
 settlement**: the accrual-correct position the case's Razorpay evidence
 implies, minus the position the merchant's ledger actually holds, account
-by account. That is the question every §3.4 template exists to close, and
-it is the reading §3.2 itself uses when it describes what a *wrong*
+by account. That is the question every accounting template exists to
+close, and it is the same reading used to describe what a *wrong*
 family-4 posting would do — "understate bank against the statement and
 leave clearing permanently open" is a per-account books check, not a
 bank-versus-settlement one.
 
 Verified against the reference batch before adoption: this residual is 0
 on all 30 ground-truth `AUTO_MATCHED` cases, non-zero on all 71 cases
-carrying a correction or an abstention (50 family + 12 FR-06 + 9
+carrying a correction or an abstention (50 family + 12 tax + 9
 ambiguous), and 0 on every one of the 50 `AUTO_CLOSED` cases once its
 candidate entries are applied — family 4 included, window or no window.
 
-**The expected position is §3.2, transcribed.** One posting per settled
-recon-line type, exactly as §3.2 states it:
+**The expected position is the accrual-correct treatment, transcribed.**
+One posting per settled recon-line type:
 
-| Line type | Accrual-correct posting (§3.0, §3.2) |
+| Line type | Accrual-correct posting |
 |---|---|
 | `payment` | `Dr Razorpay Clearing (amount - fee - tax), Dr Payment Gateway Charges (fee), Dr GST on Gateway Charges (tax) / Cr Sales Revenue (amount)` |
 | `refund` | `Dr Sales Returns and Allowances (debit) / Cr Razorpay Clearing (debit)` |
 | `adjustment`, credit | `Dr Razorpay Clearing (credit) / Cr Razorpay Settlement Adjustments (credit)` |
 | `adjustment`, debit | `Dr Razorpay Settlement Adjustments (debit) / Cr Razorpay Clearing (debit)` |
 
-The payment row is §3.2's family-3 worked example's "Correct entry" line;
+The payment row is the family-3 worked example's "Correct entry" line;
 the other three are the correct postings the family 2 and family 5
 templates restore. `Bank Account` is expected at zero throughout: under
-§3.0's accrual assumption the sale books to `Razorpay Clearing`, and this
+the accrual assumption the sale books to `Razorpay Clearing`, and this
 dataset's merchant never records the bank receipt that would later clear
-it (§3.2 family 4's no-op case is defined by clearing "simply not having
-flipped to `Bank Account` at the batch snapshot"). That is what makes
+it — family 4's no-op case is defined by clearing simply not having
+flipped to `Bank Account` at the batch snapshot. That is what makes
 family 4's premature `Bank Account` debit visible as a residual at all.
 
 **Comparison is per account, in integer paise, and absolute.** Both sides
-are internally balanced — every §3.2 posting nets to zero across its
-accounts, and so does every posted entry — so a *signed* total difference
-is identically zero and would measure nothing. The residual is the sum of
-the per-account absolute differences: zero if and only if the merchant's
-books agree with Razorpay's evidence on every account the case touches.
+are internally balanced — every accrual-correct posting nets to zero
+across its accounts, and so does every posted entry — so a *signed* total
+difference is identically zero and would measure nothing. The residual is
+the sum of the per-account absolute differences: zero if and only if the
+merchant's books agree with Razorpay's evidence on every account the case
+touches.
 """
 
 from __future__ import annotations
@@ -83,7 +84,7 @@ class ReconciliationError(Exception):
     Raised rather than silently skipped: a line type with no posting rule
     would make the residual quietly understate the discrepancy, and a
     residual that reads 0 for the wrong reason is the one failure mode
-    §1.7.5's last check exists to prevent.
+    the validation chain's last check exists to prevent.
     """
 
 
@@ -96,7 +97,7 @@ def _add(positions: AccountPositions, account_code: str, net_debit_paise: int) -
 
 
 def expected_positions(recon_lines: Sequence[ReconLine]) -> AccountPositions:
-    """§3.2's accrual-correct position per account, derived from Razorpay's evidence alone.
+    """The accrual-correct position per account, derived from Razorpay's evidence alone.
 
     Reads only `recon_line` fields — Razorpay's own report — never the
     merchant ledger, which is the thing being checked against it.
@@ -133,8 +134,8 @@ def expected_positions(recon_lines: Sequence[ReconLine]) -> AccountPositions:
 
         else:
             raise ReconciliationError(
-                f"no §3.2 posting rule for recon line {line.entity_id!r} of type {line.type!r}; "
-                "§3.5 excludes `transfer` from the generator, so this is a new line type "
+                f"no posting rule for recon line {line.entity_id!r} of type {line.type!r}; "
+                "The generator excludes `transfer`, so this is a new line type "
                 "needing a stated accrual treatment, not a case to skip"
             )
 
@@ -147,7 +148,7 @@ def index_ledger_entries_by_case(entries: Sequence[LedgerEntry]) -> dict[str, tu
     The second of the two joins a case needs. `reference == entity_id`
     (`pipeline.predicates.index_ledger_entries`) finds what the merchant
     posted against a record; this finds what the Controller posted against
-    a *case*. A correction aggregated over several records (§3.4) has one
+    a *case*. A correction aggregated over several records has one
     `reference` but names every case it belongs to here, so this is the
     join that cannot miss a leg.
     """
@@ -189,7 +190,7 @@ def actual_positions(entries: Iterable[LedgerEntry]) -> AccountPositions:
 def apply_candidates(positions: AccountPositions, candidates: Iterable[CandidateJournalEntry]) -> AccountPositions:
     """The positions a set of candidate entries would produce, without posting them.
 
-    Used to evaluate §1.7.5's residual check on a candidate that has been
+    Used to evaluate the residual check on a candidate that has been
     written inside an open transaction, and equally to answer the same
     question without writing at all.
     """
@@ -213,12 +214,12 @@ def residual_of(expected: AccountPositions, actual: AccountPositions) -> int:
 def orphan_residual_paise(case: Case) -> int:
     """An orphan case's residual: the whole unexplained bank movement.
 
-    An orphan case exists (§1.2, §3.6) precisely because no settlement, no
+    An orphan case exists precisely because no settlement, no
     recon line and no ledger entry explains its bank line — case assembly
     raised it after failing to attach it to anything. There is no
     evidence-implied position to compare against, so the entire amount is
-    unreconciled by construction, and stays so: no §3.4 template addresses
-    an orphan, and none of the four §3.6 populations is closeable by a
+    unreconciled by construction, and stays so: no template addresses
+    an orphan, and none of the four orphan populations is closeable by a
     journal entry.
     """
     return sum(abs(int(line.deposit_paise) - int(line.withdrawal_paise)) for line in case.bank_lines)

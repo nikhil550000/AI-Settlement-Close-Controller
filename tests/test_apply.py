@@ -1,18 +1,15 @@
-"""Session 4.3's checkpoint (spec.md §6.3):
+"""The checkpoint:
 
-> All five states produced; 0-paise residual on every `AUTO_CLOSED`;
-> second run posts nothing.
+All five states produced; 0-paise residual on every `AUTO_CLOSED`;
+second run posts nothing.
 
-and Phase 4's, which is the same three plus session 4.1's predicate
-assertion:
-
-> First end-to-end run producing all five terminal states. Every
-> `AUTO_CLOSED` case shows a 0-paise post-adjustment residual. Running the
-> same batch twice posts nothing on the second pass.
+First end-to-end run producing all five terminal states. Every
+`AUTO_CLOSED` case shows a 0-paise post-adjustment residual. Running the
+same batch twice posts nothing on the second pass.
 
 The three checkpoint tests are named for the sentences they check. Around
 them sit the two failure paths nothing in the reference batch exercises —
-a candidate that fails the 1.7.5 chain, and one that passes it but leaves
+a candidate that fails the validation chain, and one that passes it but leaves
 a non-zero residual — because a validator whose rejection path is never
 run is a validator nobody has tested.
 """
@@ -92,7 +89,7 @@ def test_every_auto_closed_case_shows_a_zero_paise_post_adjustment_residual() ->
 
     auto_closed = [o for o in result.outcome.outcomes if o.state is OutcomeState.AUTO_CLOSED]
 
-    assert len(auto_closed) == 50, "§3.6's batch totals put 50 cases in AUTO_CLOSED"
+    assert len(auto_closed) == 50, "the batch totals put 50 cases in AUTO_CLOSED"
     for outcome in auto_closed:
         assert outcome.residual_paise == 0, f"{outcome.case_id} closed at {outcome.residual_paise} paise"
         assert outcome.applied_entries, f"{outcome.case_id} is AUTO_CLOSED with nothing applied"
@@ -126,7 +123,7 @@ def test_running_the_same_batch_twice_posts_nothing_on_the_second_pass() -> None
             assert outcome.replayed_entries and not outcome.applied_entries, outcome.case_id
 
 
-# --- The other side of 1.7.4: a key that is posted but is *not* this entry. ---
+# --- The other side of the replay check: a key that is posted but is *not* this entry. ---
 #
 # `apply_case` splits an already-posted `(case_id, resolution_id)` two ways.
 # `_is_identical_replay` true is the idempotency path the test above covers.
@@ -241,11 +238,11 @@ def test_one_tampered_case_does_not_disturb_the_other_forty_nine() -> None:
             assert outcome.replayed_entries and not outcome.applied_entries, outcome.case_id
 
 
-# --- REV-24: the constraint that made AUTO_CLOSED unreachable. ---
+# --- The constraint that made AUTO_CLOSED unreachable. ---
 
 
 def test_a_three_leg_entry_posts_all_three_legs() -> None:
-    """REV-24's regression. Under `UNIQUE(case_id, resolution_id)` the second
+    """A regression check. Under `UNIQUE(case_id, resolution_id)` the second
     and third legs of every `T-01` were rejected and no case could close."""
     _, conn, result = _run()
 
@@ -260,7 +257,7 @@ def test_a_three_leg_entry_posts_all_three_legs() -> None:
 
 def test_the_widened_constraint_still_rejects_a_duplicate_leg() -> None:
     """Widening it to the leg must not have made it toothless: the same leg
-    of the same correction still cannot be posted twice (§1.7.4)."""
+    of the same correction still cannot be posted twice."""
     _, conn, _ = _run()
     posted = next(e for e in fetch_ledger_entries(conn) if e.source is LedgerSource.CONTROLLER_ADJUSTMENT)
 
@@ -287,7 +284,7 @@ def test_the_widened_constraint_still_rejects_a_duplicate_leg() -> None:
         )
 
 
-# --- §1.3's five states, assigned from evidence (§3.3). ---
+# --- The five states, assigned from evidence. ---
 
 
 @pytest.mark.parametrize(
@@ -297,7 +294,7 @@ def test_the_widened_constraint_still_rejects_a_duplicate_leg() -> None:
             {"has_candidates": True, "applied_or_replayed": True, "declined_by_policy": True},
             OutcomeState.REVIEW_REQUIRED,
             DeclineReason.POLICY,
-            id="policy outranks everything, §2.5 'regardless of model confidence'",
+            id="policy outranks everything, regardless of model confidence",
         ),
         pytest.param(
             {"has_candidates": True, "applied_or_replayed": True},
@@ -313,7 +310,7 @@ def test_the_widened_constraint_still_rejects_a_duplicate_leg() -> None:
             },
             OutcomeState.AUTO_CLOSED,
             None,
-            id="correction outranks a fired trigger, §3.3's OPERATIONAL_EXCEPTION definition",
+            id="correction outranks a fired trigger, per the OPERATIONAL_EXCEPTION definition",
         ),
         pytest.param(
             {"has_candidates": True, "applied_or_replayed": False},
@@ -356,13 +353,13 @@ def test_terminal_state_assignment_follows_section_3_3(
     assert assign_state(**defaults) == (expected_state, expected_reason)  # type: ignore[arg-type]
 
 
-# --- FR-07 and the two failure paths the batch never exercises. ---
+# --- Proposed entries, and the two failure paths the batch never exercises. ---
 
 
 def test_a_policy_declined_case_carries_its_proposed_entry_unapplied() -> None:
-    """FR-07: "every `REVIEW_REQUIRED` case MUST carry a machine-readable
-    proposed journal entry ... flagged as unapplied with an explicit decline
-    reason". A reviewer gets a decision, not a research task."""
+    """Every `REVIEW_REQUIRED` case must carry a machine-readable
+    proposed journal entry, flagged as unapplied with an explicit decline
+    reason. A reviewer gets a decision, not a research task."""
     batch, _, result = _run()
 
     declined = [o for o in result.outcome.outcomes if o.state is OutcomeState.REVIEW_REQUIRED]
@@ -376,7 +373,7 @@ def test_a_policy_declined_case_carries_its_proposed_entry_unapplied() -> None:
         assert not outcome.applied_entries
         assert outcome.policy_decisions
 
-    # REV-11's five carry no proposed entry: no predicate fires on them, because
+    # The five date-error cases carry no proposed entry: no predicate fires on them, because
     # their accounts and amounts are already correct and only the period is wrong.
     date_error = [o for o in declined if batch.population_of.get(o.case_id) == "family_4_date_error"]
     assert len(date_error) == 5
@@ -442,9 +439,9 @@ def test_a_candidate_that_fails_the_chain_posts_nothing_and_routes_to_review() -
 
 
 def test_a_valid_candidate_that_leaves_a_residual_is_rolled_back() -> None:
-    """§1.3 applies before re-reconciling; §1.7.5 requires a failed validation
-    to prevent auto-action. The transaction is what satisfies both, and this
-    is the only test that exercises the rollback."""
+    """Applying a correction happens before re-reconciling, and a failed
+    validation must prevent auto-action. The transaction is what satisfies
+    both, and this is the only test that exercises the rollback."""
     batch = generate_reference_batch(random.Random(0), SNAPSHOT)
     conn = connect(":memory:")
     result = run_batch(
@@ -511,7 +508,7 @@ def test_a_valid_candidate_that_leaves_a_residual_is_rolled_back() -> None:
 
 
 def test_the_reconciled_ledger_still_balances_globally() -> None:
-    """§1.8's first artifact. Every posted correction balances individually, so
+    """Every posted correction balances individually, so
     the whole ledger must still balance after 120 new legs."""
     _, conn, _ = _run()
     entries = fetch_ledger_entries(conn)
@@ -523,7 +520,7 @@ def test_the_reconciled_ledger_still_balances_globally() -> None:
 
 
 def test_every_posted_row_is_a_sourced_controller_adjustment() -> None:
-    """§1.7.2 and §1.7.3: deterministic accounts and amounts, a fixed narration
+    """Deterministic accounts and amounts, a fixed narration
     the model never wrote, and a cited source record on every row."""
     batch, conn, _ = _run()
     entity_ids = {line.entity_id for line in batch.recon_lines}
@@ -539,7 +536,7 @@ def test_every_posted_row_is_a_sourced_controller_adjustment() -> None:
 
 
 def test_no_orphan_case_ever_posts() -> None:
-    """§3.6: no §3.4 template addresses an orphan, and none of the four orphan
+    """No template addresses an orphan, and none of the four orphan
     populations is closeable by a journal entry."""
     _, _, result = _run()
 
@@ -553,11 +550,11 @@ def test_no_orphan_case_ever_posts() -> None:
 
 
 def test_predicted_states_match_ground_truth_except_slot_as_eight_cases() -> None:
-    """142 of 150 cases land in their §3.5/§3.6 state, and the entire shortfall
-    is the one population §4.2 assigns to the graded LLM slot.
+    """142 of 150 cases land in their expected state, and the entire shortfall
+    is the one population assigned to the graded LLM slot.
 
     `UNMATCHED_INBOUND_CREDIT` turns on whether a narration identifies a
-    counterparty (§4.2 Slot A, session 5.2). No deterministic component
+    counterparty (the graded LLM slot). No deterministic component
     decides it, so those 8 orphan cases fire no subtype trigger and fall
     through to `ABSTAINED`. Asserted exactly, so the gap stays a named
     limitation rather than becoming an unexplained metric dent.
@@ -567,7 +564,7 @@ def test_predicted_states_match_ground_truth_except_slot_as_eight_cases() -> Non
 
     # Settlement-anchored cases share ground truth's id; orphan cases do not
     # (the generator mints `orphan_*` ids unrelated to the bank lines), so they
-    # join through `expected_linked_source_records`, as session 4.1 established.
+    # join through `expected_linked_source_records` instead.
     ground_truth_by_line: dict[str, object] = {}
     ground_truth_by_case = {}
     for row in batch.ground_truth:
@@ -599,7 +596,7 @@ def test_predicted_states_match_ground_truth_except_slot_as_eight_cases() -> Non
 
 
 def test_the_state_distribution_matches_the_batch_totals_table() -> None:
-    """§3.6's "Batch totals", with the 8 Slot A cases moved from
+    """The batch-totals table, with the 8 Slot A cases moved from
     `EXTERNAL_ACTION_REQUIRED` to `ABSTAINED` and nothing else shifted."""
     _, _, result = _run()
 
@@ -630,7 +627,7 @@ def test_the_checkpoint_holds_across_seeds(seed: int) -> None:
 
 
 def test_the_same_seed_produces_an_identical_run() -> None:
-    """NFR-01. No wall-clock read anywhere on the path: the snapshot date is a
+    """Determinism. No wall-clock read anywhere on the path: the snapshot date is a
     parameter and it is also the posting date, so two runs of one seed write
     byte-identical ledgers."""
     _, conn_a, result_a = _run(7)

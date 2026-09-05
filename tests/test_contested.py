@@ -1,11 +1,11 @@
 """The contested-credit batch: `data/contested/`, built by `tools/build_contested_set.py`.
 
-**The finding.** FR-09 tier 2 (§4.6) matches a bank credit to a settlement on
+**The finding.** Tier 2 matches a bank credit to a settlement on
 an exact amount inside the T+2 window plus one slack day, and that key is not
 unique to a settlement. Two settlements of the same amount created the same
 day each see exactly one candidate credit, each match it at tier 2, each
 report `residual_paise = 0`, and both terminate on the strength of one credit
-that can belong to at most one of them. §4.6's tie rule ("a tie is not a
+that can belong to at most one of them. The match cascade's tie rule ("a tie is not a
 match; it routes to ambiguity") was enforced only *within* one settlement's
 candidate list, which is the only tie a per-case cascade can see;
 `pipeline.matcher.match_cases` now also resolves the symmetric tie *across*
@@ -36,7 +36,7 @@ OVERDUE`, correct) — 6 of 12 — and calls the other 6
 `AUTO_MATCHED` (2). `false_match_rate` is 0/12 and `abstention_rate` is 0/12:
 the arm never abstains on this batch, it escalates. Every one of those six is
 a *classification* miss on a case the system correctly refused to auto-match,
-which is the disclosed trade §1.3 asks for; none is a wrong posting, and no
+which is the disclosed trade the terminal states asks for; none is a wrong posting, and no
 entry is auto-applied at all.
 """
 
@@ -113,7 +113,7 @@ def batch():
 def result(batch):
     """The real graded pipeline over this batch, on the deterministic keyword arm.
 
-    `semantics=KEYWORD` is `--semantics keyword` — §5.4's baseline arm — passed
+    `semantics=KEYWORD` is `--semantics keyword` — the ablation's baseline arm — passed
     explicitly rather than left to default, because this batch's whole point is
     what that arm can and cannot read off a bank narration.
     """
@@ -138,7 +138,7 @@ def test_the_batch_holds_twelve_hand_authored_cases_in_three_groups_of_four(batc
 
 def test_every_case_survives_the_ground_truth_join(batch, result) -> None:
     """`align_ground_truth`'s join rules, satisfied — or the batch cannot be scored
-    at all and every §1.6 denominator is silently wrong (`MetricsError`'s reason
+    at all and every metric denominator is silently wrong (`MetricsError`'s reason
     for existing)."""
     aligned = align_ground_truth(result.cases, batch["ground_truth"])
     assert set(aligned) == {case.case_id for case in result.cases}
@@ -156,7 +156,7 @@ def test_false_match_rate_is_zero_over_all_twelve_cases(batch, result) -> None:
     matched at tier 2 on four credits, fired no `BANK_CREDIT_OVERDUE` trigger,
     and — their books being accrual-correct — reached `AUTO_MATCHED` on evidence
     that could support at most half of them. That is four false matches on this
-    batch, against §1.6's primary safety metric for matching.
+    batch, against the primary safety metric for matching.
     """
     report = build_eval_report(result.cases, result.outcome.outcomes, batch["ground_truth"], arm="contested")
     assert report.metrics.total_cases == EXPECTED_CASE_COUNT
@@ -172,7 +172,7 @@ def test_false_match_rate_is_zero_over_all_twelve_cases(batch, result) -> None:
 def test_the_four_uncontested_controls_still_match_at_tier_zero(result) -> None:
     """The other half of the safety claim: the fix must not make everything abstain.
 
-    Each control carries its UTR as a whitespace-delimited word — §4.6 tier 0's
+    Each control carries its UTR as a whitespace-delimited word — tier 0's
     `CLEAN` shape — and a distinct amount, so it never reaches tier 2 and can
     never be contended for.
     """
@@ -186,12 +186,12 @@ def test_the_four_uncontested_controls_still_match_at_tier_zero(result) -> None:
 
 def test_every_contested_settlement_is_demoted_to_tier_three_with_no_bank_line(result) -> None:
     """The contention fix, observed: every claimant of a contended credit falls
-    back to §4.6 tier 3 and releases the line it had claimed. Eight settlements,
+    back to tier 3 and releases the line it had claimed. Eight settlements,
     four credits, and not one credit left attached to either claimant."""
     cases = {case.case_id: case for case in result.cases}
     for case_id in sorted(CONTESTED_CASE_IDS):
         assert cases[case_id].match_tier == int(MatchTier.NO_MATCH), case_id
-        assert cases[case_id].bank_lines == (), case_id
+        assert cases[case_id].bank_lines == () , case_id
 
 
 def test_no_bank_line_is_claimed_by_more_than_one_case(result) -> None:
@@ -292,7 +292,7 @@ def test_the_measured_shortfall_is_a_classification_gap_not_a_matching_one(batch
 
 def _llm_semantics():
     """The committed cache, strict mode, `client=None` — the same offline shape
-    every other NFR-05 checkpoint in this codebase uses, so a miss cannot
+    every other offline mode checkpoint in this codebase uses, so a miss cannot
     silently become a network call."""
     from pipeline.llm_cache import CacheMode, PromptCache
     from pipeline.semantics import LlmSemantics
@@ -324,9 +324,9 @@ def _state_accuracy(batch, result) -> tuple[int, int]:
 
 
 def test_the_model_arm_resolves_two_contests_the_keyword_arm_cannot(batch, result, llm_result) -> None:
-    """§5.4 on the money path: 6/12 -> 8/12, and the two are the contested pair.
+    """The ablation on the money path: 6/12 -> 8/12, and the two are the contested pair.
 
-    The keyword arm answers `None` to every contest because §4.6 has no tier
+    The keyword arm answers `None` to every contest because the match cascade has no tier
     that can read a payment-method word out of a narration, so both UPI
     settlements sit at tier 3 and read `EXTERNAL_ACTION_REQUIRED`. The model
     reads the discriminator the bank actually wrote and the pair reaches

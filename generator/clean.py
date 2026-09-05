@@ -14,7 +14,7 @@ correctly requires the anomaly machinery (families 1-5, exception
 subtypes) that Phase 2 sessions 2.1-2.2 build. Building a "correctly
 booked refund" here would invent that machinery's shape ahead of time
 without a definition of what a clean-refund posting looks like
-beyond family 2's anomaly template — see BUILDLOG.md session 1.3, Decided.
+beyond family 2's anomaly template.
 
 Only one RNG instance is threaded through (no unseeded `random`, no second
 instance created anywhere below), and the batch snapshot date is always a
@@ -54,7 +54,7 @@ PAYMENTS_PER_SETTLEMENT_MAX = 25
 
 # Payment amount: lognormal, roughly ₹100-₹50,000, median near ₹1,500.
 # The distribution shape and range are fixed but sigma is a tunable
-# generator config, logged in BUILDLOG.md session 1.3, Decided.
+# generator config.
 PAYMENT_AMOUNT_MU = math.log(1500)
 PAYMENT_AMOUNT_SIGMA = 0.8
 PAYMENT_AMOUNT_MIN_RUPEES = 100

@@ -1,32 +1,30 @@
-"""Session 6.2's checkpoint (spec.md §6.3):
-
-> Dev-versus-held-out gap recorded in BUILDLOG.
+"""The checkpoint: the development-versus-held-out gap recorded in the build log.
 
 The checkpoint test is `test_development_versus_held_out_gap_is_the_figure_recorded_in_buildlog`.
-It runs §5.1's development batch (seed 1) and held-out batch (seed 2) on both
-arms — session 5.1's deterministic keyword baseline and Slot A — and asserts
-every figure this session writes into `BUILDLOG.md` as a literal transcribed
-here. A gap "recorded in BUILDLOG" that no test pins is a number that drifts
+It runs the development batch (seed 1) and held-out batch (seed 2) on both
+arms — the deterministic keyword baseline and Slot A — and asserts
+every figure the build log records as a literal transcribed
+here. A gap "recorded in the build log" that no test pins is a number that drifts
 the first time anything upstream changes; pinning it makes the log and the
 code one artifact.
 
 **Both arms run offline.** The baseline needs nothing. Slot A runs against the
 committed `data/llm_cache.json` in `CacheMode.STRICT` with `client=None`, which
-by construction never builds a network path (§4.3's "hard error rather than a
-fallthrough to the API") — the same NFR-05 discipline `tests/test_llm_slot_a.py`
+by construction never builds a network path — a hard error rather than a
+fallthrough to the API — the same offline discipline `tests/test_llm_slot_a.py`
 and `tests/test_llm_slot_b.py` follow, except that here the cache is the real
 committed artifact rather than a stub's output.
 
-**§5.1's rule with teeth, discharged.** Seed 2 is held out and was not
+**The held-out rule with teeth, discharged.** Seed 2 is held out and was not
 inspected case by case, and no prompt, threshold or classifier behaviour was
 changed in response to any number below. Both batches were generated, run and
-reported; nothing was tuned. The one §5.5 verdict that comes back outside its
+reported; nothing was tuned. The one verdict that comes back outside its
 band on the Slot A arm (`abstention_rate`, BELOW) is reported as measured.
 
-Around the checkpoint: the two §5.2 matrices against their own hand-checked
+Around the checkpoint: the two confusion matrices against their own hand-checked
 margins, negative controls proving each matrix moves when one outcome is
 perturbed, unit coverage of every branch of `predict_exception_class`, the
-§5.5 table transcription, and the renderers' one hard requirement — no rate
+provisional-threshold table transcription, and the renderers' one hard requirement — no rate
 printed without its denominator.
 """
 
@@ -80,10 +78,10 @@ CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "llm_cache.json"
 
 DEVELOPMENT_SEED = 1
 HELD_OUT_SEED = 2
-"""§5.1's table: seed 1 is the development batch, seed 2 is held out."""
+"""Seed 1 is the development batch, seed 2 is held out."""
 
 
-# --- §3.3's population map, transcribed for the class matrix's hand-check. ---
+# --- The population map, transcribed for the class matrix's hand-check. ---
 
 GROUND_TRUTH_CLASS_COUNTS: dict[str, int] = {
     "NONE": 18,
@@ -92,25 +90,25 @@ GROUND_TRUTH_CLASS_COUNTS: dict[str, int] = {
     "EXPECTED_TIMING_DIFFERENCE": 12,
     "AMBIGUOUS_CASE": 17,
 }
-"""§3.3's "Family and population mapping" table plus §3.6's, added up by hand.
+"""The family-and-population-mapping table, added up by hand.
 
 `ACCOUNTING_CORRECTION` — families 1-5 at 10 each (50), the family-4
-date-error variant (5) and FR-06's tax positions (12) = 67.
+date-error variant (5) and 12 other policy-excluded tax positions = 67.
 `OPERATIONAL_EXCEPTION` — the four settlement-anchored subtypes (5 + 5 + 4 + 5)
-and §3.6's three orphan subtypes (8 + 6 + 3) = 36, which is §3.6's
+and the three orphan subtypes (8 + 6 + 3) = 36, which is the
 `EXTERNAL_ACTION_REQUIRED` row exactly.
-`AMBIGUOUS_CASE` — 9 settlement-anchored plus §3.6's 8 opaque-narration
-orphans = 17, §3.6's `ABSTAINED` row exactly.
+`AMBIGUOUS_CASE` — 9 settlement-anchored plus 8 opaque-narration
+orphans = 17, the `ABSTAINED` row exactly.
 `EXPECTED_TIMING_DIFFERENCE` — the family-4 no-op (12).
 `NONE` — the fully clean population (18).
 
-Transcribed from the spec, never read back from the generator, for the reason
-session 6.1's checkpoint gives about denominators: a figure checked against
+Transcribed by hand, never read back from the generator, for the same reason
+the metrics checkpoint gives about denominators: a figure checked against
 the code that produced it is asserting nothing.
 """
 
 
-# --- The figures this session records in BUILDLOG.md. ---
+# --- The figures this suite pins. ---
 
 BASELINE_DEV = {"state": (150, 150), "precision_macro": 1.0, "recall_macro": 1.0, "abstained": 17}
 BASELINE_HELD_OUT = BASELINE_DEV
@@ -120,14 +118,14 @@ SLOT_A_DEV = {"state": (144, 150), "precision_macro": 0.8063, "recall_macro": 0.
 SLOT_A_HELD_OUT = {"state": (142, 150), "precision_macro": 0.7956, "recall_macro": 0.8857, "abstained": 9}
 
 SLOT_A_LARGEST_TARGETED_GAP = ("state_prediction_accuracy", -0.0133)
-"""Slot A's largest development-to-held-out movement on a §5.5-targeted metric."""
+"""Slot A's largest development-to-held-out movement on a targeted metric."""
 
 VALUE_COVERAGE_GAP = -0.0265
 """`value_coverage` moves this much between seeds 1 and 2 on **both** arms.
 
 It is a property of the amounts the generator drew, not of the system — which
 is why `BatchComparison.largest_targeted_gap` exists beside `largest_gap`, and
-why §5.5 gives `value_coverage` no target.
+why `value_coverage` is given no target.
 """
 
 SLOT_A_DEV_SUBTYPE_RATES: dict[SubtypeLabel, tuple[tuple[int, int], tuple[int, int]]] = {
@@ -150,7 +148,7 @@ SLOT_A_HELD_OUT_SUBTYPE_RATES: dict[SubtypeLabel, tuple[tuple[int, int], tuple[i
     SubtypeLabel.DUPLICATE_CREDIT: ((3, 3), (3, 3)),
     SubtypeLabel.DISPUTE_PENDING: ((3, 3), (3, 5)),
 }
-"""The same, seed 2. §5.2 requires these denominators visible; here they are asserted."""
+"""The same, seed 2. These denominators must be visible; here they are asserted."""
 
 
 def _slot_a_classifier():
@@ -189,12 +187,12 @@ def _assert_recorded(report, recorded: dict) -> None:
 
 
 def test_development_versus_held_out_gap_is_the_figure_recorded_in_buildlog() -> None:
-    """spec.md §6.3, session 6.2: "Dev-versus-held-out gap recorded in BUILDLOG."
+    """The checkpoint: dev-versus-held-out gap recorded in the build log.
 
-    Both §5.1 batches, both arms, every figure this session's BUILDLOG entry
-    states, asserted against the literals above. §5.1: "Both development and
-    held-out metrics are reported side by side. A gap between them is itself a
-    finding and is printed in the report rather than explained away."
+    Both development and held-out batches, both arms, every figure the build
+    log's entry states, asserted against the literals above. Both development
+    and held-out metrics are reported side by side. A gap between them is
+    itself a finding and is printed in the report rather than explained away.
     """
     _, _, baseline_dev = _report(DEVELOPMENT_SEED, "baseline")
     _, _, baseline_held = _report(HELD_OUT_SEED, "baseline")
@@ -210,21 +208,21 @@ def test_development_versus_held_out_gap_is_the_figure_recorded_in_buildlog() ->
     slot_a = compare_reports(slot_a_dev.metrics, slot_a_held.metrics, arm="slot_a")
 
     # The baseline is byte-for-byte the same system on both batches: every
-    # §5.5-targeted metric has a zero gap. §5.1 says as much before the fact —
-    # "for the deterministic path it is close to vacuous" — and this is the
+    # targeted metric has a zero gap — for the deterministic path this
+    # comparison is close to vacuous, and this is the
     # measurement of that claim, not a substitute for it.
     assert baseline.largest_targeted_gap is None
     for gap in baseline.gaps:
         if gap.metric in TARGETED_METRICS:
             assert gap.gap == 0.0, gap.metric
 
-    # Slot A is the arm §5.1's rule is actually about, and it does move.
+    # Slot A is the arm the held-out comparison is actually about, and it does move.
     largest = slot_a.largest_targeted_gap
     assert largest is not None
     assert largest.metric == SLOT_A_LARGEST_TARGETED_GAP[0]
     assert round(largest.gap, 4) == SLOT_A_LARGEST_TARGETED_GAP[1]
     # Every targeted gap is negative or zero: the held-out batch never scores
-    # better than the batch the prompt was written against. That direction is
+    # better than batch the prompt was written against. That direction is
     # the finding; its size is small.
     for gap in slot_a.gaps:
         if gap.metric in TARGETED_METRICS and gap.gap is not None:
@@ -238,7 +236,7 @@ def test_development_versus_held_out_gap_is_the_figure_recorded_in_buildlog() ->
         assert comparison.largest_gap is not None
         assert comparison.largest_gap.metric == "value_coverage"
 
-    # §5.2's per-subtype denominators, both batches, as recorded.
+    # The per-subtype denominators, both batches, as recorded.
     for report, recorded in (
         (slot_a_dev, SLOT_A_DEV_SUBTYPE_RATES),
         (slot_a_held, SLOT_A_HELD_OUT_SUBTYPE_RATES),
@@ -257,10 +255,10 @@ def test_slot_a_arm_runs_with_no_client_and_no_api_key(monkeypatch: pytest.Monke
     """The checkpoint's offline half: strict mode over the committed cache.
 
     `CacheMode.STRICT` raises `CacheMissError` on a miss rather than falling
-    through to the API (§4.3), and `client=None` means there is nothing to fall
+    through to the API, and `client=None` means there is nothing to fall
     through to — so a passing run proves every seed-1 and seed-2 prompt is in
     `data/llm_cache.json`, which is what makes the checkpoint reproducible on a
-    clean clone (§5.6.2).
+    clean clone.
     """
     monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
     for seed in (DEVELOPMENT_SEED, HELD_OUT_SEED):
@@ -269,18 +267,18 @@ def test_slot_a_arm_runs_with_no_client_and_no_api_key(monkeypatch: pytest.Monke
 
 
 def test_both_arms_are_deterministic_across_two_builds() -> None:
-    """Two builds of the same seed and arm produce identical reports (NFR-01)."""
+    """Two builds of the same seed and arm produce identical reports."""
     for arm in ("baseline", "slot_a"):
         _, _, first = _report(DEVELOPMENT_SEED, arm)
         _, _, second = _report(DEVELOPMENT_SEED, arm)
         assert first.model_dump_json() == second.model_dump_json()
 
 
-# --- §5.2's two confusion matrices. ---
+# --- The two confusion matrices. ---
 
 
 def test_state_matrix_margins_are_the_metrics_report_distributions() -> None:
-    """The state matrix's margins are figures session 6.1 already computed.
+    """The state matrix's margins are figures already computed by the metrics report.
 
     Row totals are `ground_truth_state_counts`, column totals are
     `predicted_state_counts`, and the diagonal over the total is
@@ -299,7 +297,7 @@ def test_state_matrix_margins_are_the_metrics_report_distributions() -> None:
 
 
 def test_exception_class_matrix_row_totals_hand_check_against_the_population_map() -> None:
-    """§5.2's second matrix, its ground-truth margin asserted against §3.3's own table."""
+    """The second matrix, its ground-truth margin asserted against the population map table."""
     for arm in ("baseline", "slot_a"):
         _, _, report = _report(DEVELOPMENT_SEED, arm)
         matrix = report.exception_class_matrix
@@ -311,20 +309,20 @@ def test_exception_class_matrix_row_totals_hand_check_against_the_population_map
 
 
 def test_the_class_axis_is_not_a_restatement_of_the_state_axis() -> None:
-    """The reason §5.2's second matrix is built on a predicted class of its own.
+    """The reason the second matrix is built on a predicted class of its own.
 
     On the Slot A arm the two matrices disagree, and they must be able to: 12
     ground-truth `AMBIGUOUS_CASE` cases at seed 1 are classified into an
     `OPERATIONAL_EXCEPTION` subtype while only 6 of them change terminal state,
-    because §4.2 lets one label of the eight — `UNMATCHED_INBOUND_CREDIT` —
-    move a case out of `ABSTAINED` and no other. Had the predicted class been
+    because one label of the eight — `UNMATCHED_INBOUND_CREDIT` —
+    is allowed to move a case out of `ABSTAINED` and no other. Had the predicted class been
     derived from the predicted state inside `pipeline/metrics.py`, those two
     numbers would be the same by construction and the class matrix would carry
     no information the state matrix does not.
 
-    §3.3: "Outcome state answers *what the Controller did*; exception class
-    answers *what was actually wrong with the case*. Every case carries both
-    labels independently."
+    Outcome state answers what the Controller did; exception class answers
+    what was actually wrong with the case. Every case carries both labels
+    independently.
     """
     _, _, report = _report(DEVELOPMENT_SEED, "slot_a")
     state_errors = sum(count for _, _, count in report.state_matrix.confusions())
@@ -417,8 +415,8 @@ def _predict(**overrides) -> ExceptionClass:
 
 
 def test_policy_exclusion_is_an_accounting_correction() -> None:
-    """§3.3's population map: FR-06 tax and the family-4 date-error variant are both
-    `ACCOUNTING_CORRECTION` while terminating in `REVIEW_REQUIRED`/`policy`."""
+    """The population map: policy-excluded tax cases and the family-4 date-error
+    variant are both `ACCOUNTING_CORRECTION` while terminating in `REVIEW_REQUIRED`/`policy`."""
     assert _predict(declined_by_policy=True) is ExceptionClass.ACCOUNTING_CORRECTION
     assert (
         _predict(declined_by_policy=True, residual_paise=9_99) is ExceptionClass.ACCOUNTING_CORRECTION
@@ -430,10 +428,10 @@ def test_a_template_instantiation_is_an_accounting_correction() -> None:
 
 
 def test_a_correction_outranks_a_fired_trigger() -> None:
-    """§3.3 defines `OPERATIONAL_EXCEPTION` as a discrepancy no journal entry can
+    """`OPERATIONAL_EXCEPTION` is defined as a discrepancy no journal entry can
     resolve, so a case one did resolve is not one — the same precedence
     `assign_state`'s branch 2 applies, for the same reason (family 4 fires both
-    `T-04` and `BANK_CREDIT_OVERDUE`; session 4.1 measured this)."""
+    `T-04` and `BANK_CREDIT_OVERDUE`)."""
     assert (
         _predict(has_entries=True, triggered_subtypes=(ExceptionSubtype.BANK_CREDIT_OVERDUE,))
         is ExceptionClass.ACCOUNTING_CORRECTION
@@ -456,7 +454,7 @@ def test_an_operational_label_from_slot_a_is_an_operational_exception() -> None:
 
 
 def test_slot_a_ambiguous_case_is_not_an_operational_exception() -> None:
-    """`AMBIGUOUS_CASE` is a §3.3 *class*, not a subtype beneath the second one."""
+    """`AMBIGUOUS_CASE` is an exception class, not a subtype beneath the second one."""
     assert (
         _predict(classified_subtype=SubtypeLabel.AMBIGUOUS_CASE, residual_paise=1)
         is ExceptionClass.AMBIGUOUS_CASE
@@ -476,7 +474,7 @@ def test_an_unexplained_residual_falls_through_to_ambiguous() -> None:
 
 
 def test_is_timing_attributed_needs_a_no_match_inside_the_window() -> None:
-    """Exactly §3.3's timing-residual shape — the matcher's own reason for zeroing."""
+    """Exactly the timing-residual shape — the matcher's own reason for zeroing."""
     base = Case(case_id="c", kind=CaseKind.SETTLEMENT_ANCHORED)
     assert not is_timing_attributed(base)
     assert not is_timing_attributed(base.model_copy(update={"match_tier": 0, "in_settlement_window": True}))
@@ -490,7 +488,7 @@ def test_is_timing_attributed_needs_a_no_match_inside_the_window() -> None:
 
 
 def test_apply_batch_assigns_a_class_to_every_case() -> None:
-    """Component 8's output carries §3.3's second label on all 150 cases."""
+    """Component 8's output carries the second label on all 150 cases."""
     for arm in ("baseline", "slot_a"):
         _, result, _ = _report(DEVELOPMENT_SEED, arm)
         assert len(result.outcome.outcomes) == 150
@@ -514,11 +512,11 @@ def test_the_class_never_changes_a_terminal_state() -> None:
     assert [o.state for o in relabelled] == before
 
 
-# --- §5.5's threshold review. ---
+# --- The threshold review. ---
 
 
 def test_threshold_review_covers_every_row_of_the_5_5_table() -> None:
-    """§5.5's table, minus the one row that is not on `MetricsReport`."""
+    """The provisional-thresholds table, minus the one row that is not on `MetricsReport`."""
     _, _, report = _report(DEVELOPMENT_SEED, "baseline")
     checks = report.threshold_review
     assert len(checks) == len(PROVISIONAL_THRESHOLDS) == 12
@@ -528,8 +526,8 @@ def test_threshold_review_covers_every_row_of_the_5_5_table() -> None:
     for check in checks:
         assert check.target.metric in rates
         assert check.measured == rates[check.target.metric]
-    # `throughput`/`end_to_end_latency` are §5.5's only omitted row — they live in
-    # `PerformanceMetrics`, outside the byte-identical metrics JSON (session 6.1).
+    # `throughput`/`end_to_end_latency` are the only omitted row — they live in
+    # `PerformanceMetrics`, outside the byte-identical metrics JSON.
     assert "throughput" not in {c.target.metric for c in checks}
 
 
@@ -540,10 +538,10 @@ def test_targeted_metrics_are_exactly_the_rows_with_a_target() -> None:
 
 
 def test_declined_by_policy_is_checked_against_a_construction_not_a_tolerance() -> None:
-    """§5.5's `≈ 11.3%` with its own Note: "By construction, not by performance."
+    """The target is `≈ 11.3%`, with its own note: by construction, not by performance.
 
     So the check is exact equality with the batch's ground-truth
-    `REVIEW_REQUIRED` population (§3.6's 17 of 150), not an invented tolerance
+    `REVIEW_REQUIRED` population (17 of 150), not an invented tolerance
     band around 0.113.
     """
     _, _, report = _report(DEVELOPMENT_SEED, "baseline")
@@ -556,12 +554,12 @@ def test_declined_by_policy_is_checked_against_a_construction_not_a_tolerance() 
 
 
 def test_slot_a_abstention_rate_is_reported_below_its_range_not_tuned_away() -> None:
-    """§5.5: below 8% "suggests the system is forcing calls it should decline".
+    """Below 8% suggests the system is forcing calls it should decline.
 
     Slot A assigns `UNMATCHED_INBOUND_CREDIT` to more orphan credits than
-    §3.6 planted, and each extra assignment moves a case out of `ABSTAINED`.
+    the batch planted, and each extra assignment moves a case out of `ABSTAINED`.
     The verdict is reported as measured; nothing was changed in response to it
-    (§5.1's logging rule — see this module's docstring).
+    (the held-out logging rule — see this module's docstring).
     """
     for seed in (DEVELOPMENT_SEED, HELD_OUT_SEED):
         _, _, report = _report(seed, "slot_a")
@@ -571,7 +569,7 @@ def test_slot_a_abstention_rate_is_reported_below_its_range_not_tuned_away() -> 
 
 
 def test_a_metric_above_its_band_is_above_not_a_failure() -> None:
-    """A perfect deterministic run lands above several §5.5 bands, and says so."""
+    """A perfect deterministic run lands above several provisional-threshold bands, and says so."""
     _, _, report = _report(DEVELOPMENT_SEED, "baseline")
     by_metric = {c.target.metric: c for c in report.threshold_review}
     assert by_metric["state_prediction_accuracy"].verdict is ThresholdVerdict.ABOVE
@@ -581,7 +579,7 @@ def test_a_metric_above_its_band_is_above_not_a_failure() -> None:
 
 
 def test_an_undefined_metric_gets_its_own_verdict() -> None:
-    """A zero denominator is undefined, not a failure — session 6.1's `Rate` rule,
+    """A zero denominator is undefined, not a failure — the `Rate` rule,
     carried into the review so a metric nobody predicted cannot read as a miss."""
     _, _, report = _report(DEVELOPMENT_SEED, "baseline")
     broken = report.metrics.model_copy(
@@ -595,7 +593,7 @@ def test_an_undefined_metric_gets_its_own_verdict() -> None:
     assert "undefined, not zero" in check.detail
 
 
-# --- §5.1's comparison. ---
+# --- The development-versus-held-out comparison. ---
 
 
 def test_gap_is_held_out_minus_development() -> None:
@@ -611,7 +609,7 @@ def test_gap_is_held_out_minus_development() -> None:
 def test_comparison_covers_every_rate_named_rates_exposes() -> None:
     """A metric added to `MetricsReport` and wired into `named_rates` is compared
     automatically; one that is not wired in is caught here rather than silently
-    dropped from §5.1's side-by-side."""
+    dropped from the development-versus-held-out side-by-side."""
     _, _, dev = _report(DEVELOPMENT_SEED, "baseline")
     _, _, held = _report(HELD_OUT_SEED, "baseline")
     comparison = compare_reports(dev.metrics, held.metrics, arm="baseline")
@@ -638,7 +636,8 @@ def test_a_tie_between_two_gaps_is_broken_by_order_not_by_float_noise() -> None:
     views of the same two cases — so their gaps are equal. As raw floats the
     two differ in the sixteenth decimal place, and a plain `max` reported
     whichever way the subtraction happened to round. `largest_gap_among`
-    compares at `_GAP_PRECISION` and takes the first in §1.6's order instead.
+    compares at `_GAP_PRECISION` and takes the first in the metrics surface's
+    order instead.
     """
     _, _, dev = _report(DEVELOPMENT_SEED, "slot_a")
     _, _, held = _report(HELD_OUT_SEED, "slot_a")
@@ -667,12 +666,12 @@ def test_largest_gap_is_none_when_nothing_moved() -> None:
     assert empty.max_absolute_gap == 0.0
 
 
-# --- Rendering: §5.2's one hard requirement. ---
+# --- Rendering: one hard requirement. ---
 
 
 def test_no_renderer_prints_a_rate_without_its_denominator() -> None:
-    """§5.2: reported "with denominators visible … rather than as a single headline
-    number", and §3.6's reason — the seven denominators divide 36 cases."""
+    """Reported with denominators visible, rather than as a single headline
+    number — because the seven denominators divide 36 cases."""
     _, _, report = _report(DEVELOPMENT_SEED, "slot_a")
     breakdown = render_subtype_breakdown(report.metrics)
     for metric in report.metrics.subtype_metrics:
@@ -685,8 +684,9 @@ def test_no_renderer_prints_a_rate_without_its_denominator() -> None:
         measured = check.measured
         if isinstance(measured, MacroRate):
             # A macro is a mean of ratios, not a ratio (see `MacroRate`); it carries
-            # its coverage instead of a denominator, and §5.2's rule is satisfied by
-            # the per-subtype table above, where the seven real denominators live.
+            # its coverage instead of a denominator, and the visible-denominator rule
+            # is satisfied by the per-subtype table above, where the seven real
+            # denominators live.
             assert f"({measured.subtypes_averaged} of {measured.subtypes_eligible} subtypes)" in review
         else:
             assert f"({measured.numerator}/{measured.denominator})" in review
@@ -707,7 +707,7 @@ def test_comparison_renders_both_the_largest_gap_and_the_targeted_one() -> None:
     _, _, held = _report(HELD_OUT_SEED, "slot_a")
     text = render_comparison(compare_reports(dev.metrics, held.metrics, arm="slot_a"))
     assert "largest gap: value_coverage -0.0265" in text
-    assert "largest gap on a §5.5-targeted metric: state_prediction_accuracy -0.0133" in text
+    assert "largest gap on a targeted metric: state_prediction_accuracy -0.0133" in text
 
 
 def test_full_report_renders_all_four_sections() -> None:

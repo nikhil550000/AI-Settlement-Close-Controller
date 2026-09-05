@@ -1,4 +1,4 @@
-"""Canonical input schemas, per spec.md §3.1.
+"""Canonical input schemas.
 
 Four separate schemas — not one denormalized table. A recon line and a
 ledger entry are different things with different lifecycles; collapsing
@@ -52,7 +52,7 @@ class ReconLine(BaseModel):
     Raw external evidence, never mutated by the Controller.
 
     `posted_at` is emitted as constant null by the generator and MUST NOT
-    be read as evidence anywhere in the pipeline (REV-14) — families
+    be read as evidence anywhere in the pipeline. Families
     1, 2, 3 and 5 are defined by absence from the merchant ledger, and
     this field is Razorpay-side, not ledger-side. It is kept only for
     payload-shape fidelity.
@@ -99,7 +99,7 @@ class Settlement(BaseModel):
 class BankLine(BaseModel):
     """Post-adapter canonical shape a bank statement line normalizes to.
 
-    Not a Razorpay API shape — FR-08's column-mapping adapter produces
+    Not a Razorpay API shape: the column-mapping adapter produces
     this from any of the three bank format profiles.
     """
 
@@ -116,7 +116,7 @@ class BankLine(BaseModel):
 
 
 class LedgerEntry(BaseModel):
-    """Restates the canonical journal schema locked in §1.5.
+    """Restates the canonical journal schema.
 
     `resolution_id` and `case_id` complete that schema (not revise it) to
     make invariant 1.7.4 — idempotency on `(case_id, resolution_id)` —
@@ -146,6 +146,6 @@ class LedgerEntry(BaseModel):
         if has_resolution_id != is_controller_adjustment or has_case_id != is_controller_adjustment:
             raise ValueError(
                 "resolution_id and case_id must be set if and only if "
-                "source is controller_adjustment (spec.md §3.1)"
+                "source is controller_adjustment"
             )
         return self

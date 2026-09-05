@@ -1,4 +1,4 @@
-"""Session 3.1 checkpoint (spec.md §6.3): "All three profiles parse to an
+""" checkpoint: "All three profiles parse to an
 identical canonical `bank_line`."
 
 Exercises both halves the session built: `generator/bank_export.py`'s
@@ -27,10 +27,10 @@ PROFILES = ("hdfc", "icici", "axis")
 
 
 def _sample_records() -> list[BankLine]:
-    """A handful of hand-built lines exercising the quirks §2.6 names explicitly.
+    """A handful of hand-built lines exercising the quirks the adapter contract names explicitly.
 
     `bank_ref_no` is left `None` throughout — ICICI-shape has no ref/cheque
-    column at all (§2.6), so a non-null value could never round-trip
+    column at all, so a non-null value could never round-trip
     identically across all three profiles. HDFC's and Axis's own ref-number
     columns are covered separately in
     `test_ref_no_is_profile_specific_not_cross_profile_identical`.
@@ -125,7 +125,7 @@ def test_the_full_reference_batchs_bank_lines_round_trip_on_every_profile(tmp_pa
             )
 
 
-# --- The individual quirks §2.6 names. ---
+# --- The individual quirks the adapter contract names. ---
 
 
 def test_junk_header_rows_and_trailing_summary_block_are_skipped(tmp_path: Path) -> None:
@@ -135,7 +135,7 @@ def test_junk_header_rows_and_trailing_summary_block_are_skipped(tmp_path: Path)
         write_bank_statement(records, profile=profile, path=path)
         raw_line_count = len(path.read_text(encoding="utf-8").splitlines())
         config = load_profile(profile)
-        # header row + data rows is strictly fewer than the raw file, which also
+        # header row + data rows is strictly fewer than raw file, which also
         # carries junk header lines above and a trailing summary block below.
         assert raw_line_count > len(records) + 1
         parsed = parse_bank_statement(path, profile=profile)
@@ -165,7 +165,7 @@ def test_withdrawal_deposit_naming_versus_debit_credit_naming(tmp_path: Path) ->
 
 def test_ref_no_is_profile_specific_not_cross_profile_identical(tmp_path: Path) -> None:
     """HDFC's `Chq./Ref.No.` and Axis's `Chq No` columns preserve `bank_ref_no`;
-    ICICI-shape (§2.6) has no such column at all, so it always parses to `None`."""
+    ICICI-shape has no such column at all, so it always parses to `None`."""
     record = _sample_records()[0].model_copy(update={"bank_ref_no": "REFNO12345"})
     for profile, expected in (("hdfc", "REFNO12345"), ("axis", "REFNO12345"), ("icici", None)):
         path = tmp_path / f"{profile}.csv"

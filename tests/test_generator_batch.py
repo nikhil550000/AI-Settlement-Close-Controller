@@ -1,7 +1,7 @@
-"""Session 2.2 checkpoint (spec.md §6.3): "§3.5 and §3.6 tables assert
-exactly; REV-17 bank-line split holds" — against the **full** 150-case
-reference batch (18 clean + 50 §3.5 families + 57 §3.5 remainder + 25
-§3.6 orphan), assembled the same way `generator/cli.py`'s `generate`
+""" checkpoint: "the generator plan and the orphan populations tables assert
+exactly; a later revision bank-line split holds" — against the **full** 150-case
+reference batch (18 clean + 50 the generator plan families + 57 the generator plan remainder + 25
+the orphan populations orphan), assembled the same way `generator/cli.py`'s `generate`
 command does.
 """
 
@@ -22,14 +22,14 @@ from pipeline.money import Paise
 
 SNAPSHOT = date(2026, 8, 28)
 
-# spec.md §3.5 (settlement-anchored) + §3.6 (orphan) case-allocation tables, transcribed exactly.
+# the generator plan (settlement-anchored) + the orphan populations (orphan) case-allocation tables, transcribed exactly.
 _EXPECTED_POPULATION_COUNTS = {
     ("NONE", "NONE", "AUTO_MATCHED"): 18,  # Fully clean
     ("EXPECTED_TIMING_DIFFERENCE", "NONE", "AUTO_MATCHED"): 12,  # Family-4 no-op
     ("ACCOUNTING_CORRECTION", "OMISSION", "AUTO_CLOSED"): 30,  # Families 1, 2, 5 (10 each)
     ("ACCOUNTING_CORRECTION", "MISPOSTING", "AUTO_CLOSED"): 20,  # Families 3, 4 (10 each)
     ("ACCOUNTING_CORRECTION", "MISPOSTING", "REVIEW_REQUIRED"): 5,  # Family-4 date error
-    ("ACCOUNTING_CORRECTION", "OMISSION", "REVIEW_REQUIRED"): 12,  # FR-06 tax positions
+    ("ACCOUNTING_CORRECTION", "OMISSION", "REVIEW_REQUIRED"): 12,  # the policy exclusions tax positions
     ("OPERATIONAL_EXCEPTION", "SETTLEMENT_UTR_MISSING", "EXTERNAL_ACTION_REQUIRED"): 5,
     ("OPERATIONAL_EXCEPTION", "BANK_CREDIT_OVERDUE", "EXTERNAL_ACTION_REQUIRED"): 5,
     ("OPERATIONAL_EXCEPTION", "SETTLEMENT_AMOUNT_MISMATCH", "EXTERNAL_ACTION_REQUIRED"): 4,
@@ -41,7 +41,7 @@ _EXPECTED_POPULATION_COUNTS = {
 }
 assert sum(_EXPECTED_POPULATION_COUNTS.values()) == 150
 
-# spec.md §3.5 "Batch totals".
+# the generator plan "Batch totals".
 _EXPECTED_STATE_TOTALS = {
     "AUTO_MATCHED": 30,
     "AUTO_CLOSED": 50,
@@ -115,7 +115,7 @@ def test_case_ids_are_unique_across_the_full_batch():
 
 
 def test_bank_line_decomposition_matches_rev_17():
-    """REV-17: ~98 settlement credits + ~28 orphan-case lines + ~50 non-settlement noise, ~175 total."""
+    """A later revision: ~98 settlement credits + ~28 orphan-case lines + ~50 non-settlement noise, ~175 total."""
     clean_batch, family_batch, exception_batch, orphan_batch, noise = _full_batch(1)
     settlement_credit_lines = len(clean_batch.bank_lines) + len(family_batch.bank_lines) + len(exception_batch.bank_lines)
     orphan_lines = len(orphan_batch.bank_lines)
@@ -125,11 +125,11 @@ def test_bank_line_decomposition_matches_rev_17():
     assert orphan_lines == 28
     assert noise_lines == 50
     total = settlement_credit_lines + orphan_lines + noise_lines
-    assert 170 <= total <= 180  # REV-17's stated "~175"
+    assert 170 <= total <= 180  # a revision's stated "~175"
 
 
 def test_no_credit_populations_hold_the_27_case_rev_17_membership():
-    """REV-17 names exactly: 10 family-4 core + 12 family-4 no-op + 5 `BANK_CREDIT_OVERDUE` = 27 no-credit cases."""
+    """A later revision names exactly: 10 family-4 core + 12 family-4 no-op + 5 `BANK_CREDIT_OVERDUE` = 27 no-credit cases."""
     _clean, family_batch, exception_batch, _orphan, _noise = _full_batch(1)
     n_settlement_anchored = len(family_batch.settlements) + len(exception_batch.settlements)
     n_with_credit = len(family_batch.bank_lines) + len(exception_batch.bank_lines)

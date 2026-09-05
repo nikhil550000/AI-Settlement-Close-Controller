@@ -1,4 +1,4 @@
-"""Session 4.2 checkpoint (spec.md §6.3): "Every candidate JV balances; a
+""" checkpoint: "Every candidate JV balances; a
 `tax = 0` `T-01` collapses correctly." Unit coverage of amount derivation,
 zero-leg omission and per-case aggregation in `pipeline/instantiator.py`,
 plus template-by-template and full-batch agreement with the generator's own
@@ -192,7 +192,7 @@ def test_t01_instantiates_three_balanced_legs():
 
 
 def test_t01_with_zero_tax_collapses_to_two_legs():
-    """§3.4: "Zero-amount legs are omitted, not posted... `T-01` with `tax = 0`
+    """The template definitions: "Zero-amount legs are omitted, not posted... `T-01` with `tax = 0`
     collapses to `Dr Payment Gateway Charges / Cr Razorpay Clearing` — a legal
     instantiation of `T-01`, not a seventh template." The session checkpoint itself.
     """
@@ -397,7 +397,7 @@ def test_every_candidate_leg_uses_an_account_permitted_for_its_own_template():
 
 def test_auto_closed_family_candidates_match_the_generators_own_expected_journal_entries():
     """The five auto-closable families (1-5, 50 cases) are the only populations whose
-    ground truth carries `expected_journal_entries` (§1.6: normally empty for
+    ground truth carries `expected_journal_entries` (the metric surface: normally empty for
     non-`AUTO_CLOSED` states). For those, the instantiator's own derivation must match
     the generator's hand-derived label exactly — not merely balance.
     """

@@ -68,7 +68,7 @@ def _audit(batch: str):
 @pytest.mark.parametrize("batch", COMMITTED_BATCHES)
 def test_no_attached_credit_names_a_different_settlement(batch: str) -> None:
     audit = _audit(batch)
-    assert audit.contradictions == (), (
+    assert audit.contradictions == () , (
         f"{batch}: a credit attached to one settlement carries another's UTR -- "
         f"{[c.model_dump() for c in audit.contradictions]}"
     )

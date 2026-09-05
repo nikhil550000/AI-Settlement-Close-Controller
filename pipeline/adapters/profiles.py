@@ -1,6 +1,6 @@
-"""Loader for the FR-08 declarative column-mapping profiles.
+"""Loader for the declarative column-mapping profiles.
 
-Per §2.6 and §4.5: "The three FR-08 profiles are YAML column maps, not
+The three profiles are YAML column maps, not
 code." Each `profiles/<name>.yaml` file names its bank-specific header row
 verbatim, its date format, and which header text maps to which canonical
 `pipeline.schemas.BankLine` field. `generator/bank_export.py`'s writer

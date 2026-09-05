@@ -1,4 +1,4 @@
-"""`pipeline/loaders.py`: JSONL round trip for the four §3.1 schemas plus §1.6 ground truth."""
+"""`pipeline/loaders.py`: JSONL round trip for the four the canonical schemas plus the metric surface ground truth."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
-"""Round-trip tests for the four §3.1 canonical schemas.
+"""Round-trip tests for the four the canonical schemas canonical schemas.
 
-Checkpoint (session 1.2): each schema round-trips — construct, serialize
+Checkpoint: each schema round-trips — construct, serialize
 to JSON, parse back — and the result equals the original instance.
 """
 

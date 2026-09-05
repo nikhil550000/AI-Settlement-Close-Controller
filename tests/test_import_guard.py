@@ -1,7 +1,7 @@
 """Static import-graph guard: pipeline/ must never import generator/.
 
-Per spec.md §4.1, this must be structurally impossible, not merely discouraged —
-generator logic leaking into the graded path would invalidate every metric in §1.6.
+Per the component boundaries, this must be structurally impossible, not merely discouraged —
+generator logic leaking into the graded path would invalidate every metric in the metric surface.
 
 This is static analysis of the import graph (source parsed with ast, nothing
 executed), not a runtime check. Every .py file under pipeline/ is scanned, so a
@@ -48,5 +48,5 @@ def test_pipeline_never_imports_generator():
 
     assert not violations, (
         f"pipeline/ modules must never import {BANNED_ROOT}/, directly or "
-        f"transitively (spec.md §4.1): {violations}"
+        f"transitively: {violations}"
     )

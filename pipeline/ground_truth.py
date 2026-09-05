@@ -1,18 +1,17 @@
-"""Per-case ground-truth schema, per spec.md §1.6.
+"""Per-case ground-truth schema.
 
-Distinct from the four §3.1 canonical *input* schemas (`pipeline/schemas.py`):
-this is the label the generator emits alongside the records it writes, per
-§3.5's "Label emission" rule — labels come from the injection plan, never
-re-derived from generated records. It lives under `pipeline/`, not
-`generator/`, for the same reason the four canonical schemas do (see
-BUILDLOG.md session 1.2, Decided): ground truth is written by the generator
-in Phase 2 but read by the eval harness under `pipeline/` in Phase 6, and
-`pipeline/` must never import `generator/` (§4.1).
+Distinct from the four canonical *input* schemas (`pipeline/schemas.py`):
+this is the label the generator emits alongside the records it writes —
+labels come from the injection plan, never re-derived from generated
+records. It lives under `pipeline/`, not `generator/`, for the same reason
+the four canonical schemas do: ground truth is written by the generator
+but read by the eval harness under `pipeline/`, and `pipeline/` must never
+import `generator/`.
 
 `expected_journal_entries` and its `ExpectedJournalLeg`/`ExpectedJournalEntry`
-shape are a completion of §1.6's "list; see note below" into a concrete
-Pydantic shape — analogous to how session 1.2 completed `ledger_entry`'s
-`resolution_id`/`case_id` fields — not an invented field.
+shape are a completion of the ground-truth field list into a concrete
+Pydantic shape, analogous to how `ledger_entry`'s `resolution_id`/`case_id`
+fields were completed — not an invented field.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from pipeline.money import NonNegPaise
 
 
 class OutcomeState(StrEnum):
-    """The five terminal states, §1.3."""
+    """The five terminal states."""
 
     AUTO_MATCHED = "AUTO_MATCHED"
     AUTO_CLOSED = "AUTO_CLOSED"
@@ -35,7 +34,7 @@ class OutcomeState(StrEnum):
 
 
 class ExceptionClass(StrEnum):
-    """The four-class taxonomy plus the `NONE` sentinel, §3.3."""
+    """The four-class taxonomy plus the `NONE` sentinel."""
 
     NONE = "NONE"
     ACCOUNTING_CORRECTION = "ACCOUNTING_CORRECTION"
@@ -45,7 +44,7 @@ class ExceptionClass(StrEnum):
 
 
 class ExceptionSubtype(StrEnum):
-    """Subtypes beneath the four classes, plus `NONE`, §3.3."""
+    """Subtypes beneath the four classes, plus `NONE`."""
 
     NONE = "NONE"
     OMISSION = "OMISSION"
@@ -60,14 +59,14 @@ class ExceptionSubtype(StrEnum):
 
 
 class DeclineReason(StrEnum):
-    """`expected_decline_reason`, §1.6 — nullable, so used as `DeclineReason | None`."""
+    """`expected_decline_reason` — nullable, so used as `DeclineReason | None`."""
 
     POLICY = "policy"
     CONFIDENCE = "confidence"
 
 
 class ExpectedJournalLeg(BaseModel):
-    """One debit-or-credit leg of an expected correcting entry, §3.4's templates."""
+    """One debit-or-credit leg of an expected correcting entry, per the templates."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -87,7 +86,7 @@ class ExpectedJournalEntry(BaseModel):
 
 
 class GroundTruthCase(BaseModel):
-    """Ground-truth schema per reconciliation case, §1.6, verbatim field list."""
+    """Ground-truth schema per reconciliation case, verbatim field list."""
 
     model_config = ConfigDict(frozen=True)
 

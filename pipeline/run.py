@@ -1,23 +1,22 @@
 """One end-to-end pass of components 1-8 over a batch.
 
-**Not a new component.** §4.1 fixes ten components and one direction of
+**Not a new component.** The pipeline fixes ten components and one direction of
 data flow with no cycles; this module is that flow, made executable, and
 adds no logic of its own beyond calling each stage in order and handing
-one stage's output to the next. FR-10's CLI surface, built in a later
-session, calls this rather than re-deriving the wiring — and the Phase 4
-checkpoint ("first end-to-end run producing all five terminal states")
-needs it to exist to be checkable at all.
+one stage's output to the next. The CLI surface calls this rather than
+re-deriving the wiring — and "first end-to-end run producing all five terminal
+states" needs it to exist to be checkable at all.
 
-The graded path only. `pipeline/` never imports `generator/` (§4.1), so
+The graded path only. `pipeline/` never imports `generator/`, so
 `run_batch` takes already-loaded records; where they came from — the
-committed reference dataset, a raw bank export through the FR-08 adapter,
-or the generator in a test — is the caller's business.
+committed reference dataset, a raw bank export through the bank-statement
+adapter, or the generator in a test — is the caller's business.
 
-Component 5 (classifier) is threaded through as of session 5.2, but only
-as a caller-supplied function: §4.2 assigns it the one graded LLM slot,
-and both arms it can take (session 5.1's keyword baseline, session 5.2's
+Component 5 (classifier) is threaded through, but only
+as a caller-supplied function: it fills the one graded LLM slot,
+and both arms it can take (the keyword baseline, or
 Slot A) are equally valid callers, so `run_batch` does not hard-code
-either. Passing no classifier reproduces the pre-5.2 run exactly —
+either. Passing no classifier reproduces the earlier run exactly —
 `UNMATCHED_INBOUND_CREDIT` unassigned, those 8 orphan cases in
 `ABSTAINED` rather than `EXTERNAL_ACTION_REQUIRED` — which is what
 `KNOWN_GAPS` still describes when that is how a caller runs it.
@@ -44,9 +43,9 @@ from pipeline.semantics import KEYWORD, NarrationSemantics
 
 KNOWN_GAPS: tuple[str, ...] = (
     "UNMATCHED_INBOUND_CREDIT is unassigned only when run_batch() is called with no "
-    "classifier: §4.2 puts 'does this narration identify a counterparty?' in Slot A, "
-    "the one graded LLM slot, with session 5.1's keyword baseline as its comparator. "
-    "Passing either as `classifier=` closes this gap (session 5.2) — the 8 affected "
+    "classifier: 'does this narration identify a counterparty?' is Slot A's question, "
+    "the one graded LLM slot, with the keyword baseline as its comparator. "
+    "Passing either as `classifier=` closes this gap — the 8 affected "
     "orphan cases then terminate in EXTERNAL_ACTION_REQUIRED, matching ground truth.",
 )
 """What this pipeline does not decide without a classifier, and who owns closing it.
@@ -58,10 +57,10 @@ up as a named limitation rather than as an unexplained dent in
 
 
 def _carry_forward_validations(first: BatchOutcome, second: BatchOutcome) -> BatchOutcome:
-    """Keep the §1.8 audit trail from the pass that actually posted.
+    """Keep the audit trail from the pass that actually posted.
 
-    `run_batch` applies twice when a classifier is given, and invariant 1.7.4
-    makes the second pass *replay* rather than repost. That is correct
+    `run_batch` applies twice when a classifier is given, and idempotent
+    controller adjustments make the second pass *replay* rather than repost. That is correct
     behaviour, but it costs the report its evidence: `apply_case`'s replay
     short-circuit emits a `ValidationReport` carrying the single check
     `NOT_PREVIOUSLY_POSTED` and never runs `validate_candidate` again, so
@@ -73,7 +72,7 @@ def _carry_forward_validations(first: BatchOutcome, second: BatchOutcome) -> Bat
     and showed none of `entry_balanced`, `post_adjustment_residual_zero`,
     `account_direction_permitted`, `template_allowlisted` or
     `cited_records_exist`. There was no previous run — it was this same
-    command's internal second pass — so the artifact §1.8 requires to show
+    command's internal second pass — so the audit trail that must show
     "the specific safety validations passed" was showing one check, and the
     one least able to support the claim.
 
@@ -94,7 +93,7 @@ def _carry_forward_validations(first: BatchOutcome, second: BatchOutcome) -> Bat
 
 
 class RunResult(BaseModel):
-    """Everything one pass produced, for the eval harness and the FR-11 report."""
+    """Everything one pass produced, for the eval harness and the report."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -142,7 +141,7 @@ def run_batch(
     """Components 2-8 over one batch, against the ledger held in `conn`.
 
     `snapshot_date` is a parameter and never a wall-clock read: it decides
-    the T+2 settlement window (§3.3), and a batch reprocessed tomorrow
+    the T+2 settlement window, and a batch reprocessed tomorrow
     must reconcile identically to one processed today. It doubles as the
     posting date of every correcting entry, which is what makes a rerun
     byte-identical.
@@ -154,12 +153,12 @@ def run_batch(
     `classifier`, when given, is one call over component 5's evidence
     bundles — `pipeline.classifier.classify_batch_baseline`, a
     `pipeline.classifier.classify_batch_llm` partial, or a stub in a test.
-    §4.2's criterion for what Slot A sees ("non-`AUTO_CLOSED` cases") is
+    Slot A's criterion for what it sees ("non-`AUTO_CLOSED` cases") is
     stated in terms of a *terminal state*, which only exists after
     component 8 runs once — so this function runs `apply_batch` **twice**
     when a classifier is supplied: once to find the non-auto-close cases,
     once more with the classifier's output threaded in. The first pass's
-    `AUTO_CLOSED` writes are idempotent under invariant 1.7.4, so the
+    `AUTO_CLOSED` writes are idempotent, so the
     second pass recognises and replays them rather than reposting —
     exactly the mechanism `apply_case`'s replay path already exists for.
     """

@@ -1,7 +1,7 @@
 """SQLite DDL tests: the ledger table exists and its
 UNIQUE(case_id, resolution_id) constraint enforces invariant 1.7.4.
 
-Checkpoint (session 1.2): the unique constraint rejects a duplicate
+Checkpoint: the unique constraint rejects a duplicate
 (case_id, resolution_id) insert.
 """
 

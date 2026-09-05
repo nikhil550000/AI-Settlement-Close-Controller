@@ -1,5 +1,5 @@
 """Agentic bank-profile inference (`pipeline/adapters/inference.py`): the
-propose -> verify -> repair loop over a bank FR-08 has no hand-written profile for.
+propose -> verify -> repair loop over a bank the bank adapter has no hand-written profile for.
 
 Two things are being tested here, and they are tested by different means on purpose.
 
@@ -7,7 +7,7 @@ Two things are being tested here, and they are tested by different means on purp
 accept on attempt 2, exhaust the budget and give up cleanly on attempt 3 — is driven
 by `_ScriptedClient`, a stub `LLMClient` that never touches a socket. Every branch
 including the ones a real model happens not to take today is reachable and pinned,
-and the suite stays network-free and credential-free (NFR-05), the same rule
+and the suite stays network-free and credential-free, the same rule
 `tests/test_llm_slot_a.py` sets for Slot A.
 
 **The loop's actual result against a real model** is tested by replaying
@@ -15,7 +15,7 @@ and the suite stays network-free and credential-free (NFR-05), the same rule
 `pipeline.llm_client.FIREWORKS_MODEL_ID` refresh run, under `CacheMode.STRICT` with
 `client=None` — so the checks below assert what Fireworks really proposed for these
 two files, not what a stub was told to say, and still never open a connection
-(§4.3: strict mode is a hard error on a miss, never a fallthrough to the API).
+(the determinism layers: strict mode is a hard error on a miss, never a fallthrough to the API).
 
 The two committed fixtures are chosen to be opposite results, because only reporting
 the one that works would be dressing up the measurement:
@@ -25,7 +25,7 @@ the one that works would be dressing up the measurement:
   `Withdrawal (Dr)`/`Deposit (Cr)` columns, a trailing summary block). Nothing in
   `profiles/` describes it. The loop infers a working profile.
 - `data/unseen_bank/yesbank_statement.csv` — a single `Amount (INR)` column plus a
-  separate `Dr/Cr` indicator. FR-08's profile schema has two money columns and no
+  separate `Dr/Cr` indicator. The bank adapter's profile schema has two money columns and no
   direction flag, so **no** column map can express this file, and the honest
   outcome is a bounded give-up rather than a plausible-looking profile that books
   every debit as a credit. The loop gives up.
@@ -171,7 +171,7 @@ def test_three_failures_terminate_with_a_clean_give_up_not_an_exception(tmp_path
     assert {a.verification.failed_check for a in result.attempts} == {"balance_continuity"}
     assert result.give_up_reason is not None
     assert "balance_continuity" in result.give_up_reason
-    # Every attempt is retained, so a give-up is auditable rather than opaque (§1.7.3).
+    # Every attempt is retained, so a give-up is auditable rather than opaque.
     assert all(a.proposal.withdrawal_column == "Deposit (Cr)" for a in result.attempts)
 
 
@@ -303,7 +303,7 @@ def test_the_accepted_yaml_is_a_profile_the_existing_loader_can_read(tmp_path: P
         "balance_column",
     }
     # Provenance: a reviewer must not mistake this for a hand-written profile.
-    assert result.profile_yaml.startswith("# FR-08 column map INFERRED")
+    assert result.profile_yaml.startswith("# Column map INFERRED")
 
 
 def test_an_absent_optional_column_renders_as_yaml_null_like_the_icici_profile(tmp_path: Path) -> None:
@@ -318,7 +318,7 @@ def test_an_absent_optional_column_renders_as_yaml_null_like_the_icici_profile(t
 
 
 def test_the_proposal_schema_cannot_express_a_ledger_value(tmp_path: Path) -> None:
-    """§4.2's boundary, enforced by the decoder rather than by prose: there is no
+    """The model-slot boundary's boundary, enforced by the decoder rather than by prose: there is no
     field in the sampled space for an amount, an account, or a `bank_profile` tag."""
     properties = PROPOSAL_JSON_SCHEMA["properties"]
     assert PROPOSAL_JSON_SCHEMA["additionalProperties"] is False
@@ -407,7 +407,7 @@ def test_the_duplicated_header_match_agrees_with_the_adapters_own() -> None:
         _find_header_row(grid, ("Not", "A", "Header"))
 
 
-# --- Cache behaviour: offline by default, network only on refresh (§4.3, NFR-05). ---
+# --- Cache behaviour: offline by default, network only on refresh. ---
 
 
 def test_strict_mode_never_reaches_for_a_client(tmp_path: Path) -> None:
@@ -423,7 +423,7 @@ def test_refresh_mode_on_a_miss_requires_a_client(tmp_path: Path) -> None:
 def test_a_repair_sequence_caches_as_a_chain_and_replays_offline(tmp_path: Path) -> None:
     """Each attempt is a different prompt, so a two-attempt run caches two entries and
     replays with the same verdicts and no client at all — an adaptive loop that is
-    still reproducible under NFR-01."""
+    still reproducible from a clean clone."""
     cache_path = tmp_path / "chain.json"
     live = infer_bank_profile(
         KOTAK,
@@ -458,7 +458,7 @@ def test_the_real_model_inferred_a_working_kotak_profile_on_attempt_one() -> Non
 
 def test_the_real_model_gave_up_cleanly_on_a_file_the_profile_schema_cannot_express() -> None:
     """The measured negative, kept as a test rather than a footnote: an
-    `Amount` + `Dr/Cr` statement has no valid column map under FR-08's two-money-column
+    `Amount` + `Dr/Cr` statement has no valid column map under the bank adapter's two-money-column
     schema, the model proposes the only thing it can (both money columns pointing at
     `Amount (INR)`), `direction_coherent` rejects it three times, and the loop stops.
     No profile, no bank line, no exception."""

@@ -1,4 +1,4 @@
-"""`uv run generate` — the generator's CLI entry point (AGENT.md command surface).
+"""`uv run generate` — the generator's CLI entry point.
 
 Phase 1 (session 1.3) wired up the clean-case path. Session 2.1 added the
 five family injections. Session 2.2 added the remaining

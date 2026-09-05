@@ -1,29 +1,29 @@
-"""The instantiator, per spec.md §4.1 component 6.
+"""The instantiator: turns a fired predicate hit into deterministic ledger legs.
 
 > **Instantiator.** Template -> candidate JV; deterministic amount
-> derivation, zero-leg omission, per-case aggregation (§3.4).
+> derivation, zero-leg omission, per-case aggregation.
 
-Runs downstream of the predicate evaluator (component 4): its input is
+Runs downstream of the predicate evaluator: its input is
 `pipeline.predicates.CaseEvidence.template_hits`, one `PredicateHit` per
 `(case_id, entity_id, template_id)` that fired. This module never decides
-*whether* a template applies — REV-16 mutual exclusivity is already
+*whether* a template applies — template mutual exclusivity is already
 enforced upstream, so every hit here is instantiated. It also never
-decides whether the resulting entry is safe to auto-apply — that is
-§1.7.5's chain, the validator (component 7, session 4.3). This module's
-only job is turning a fired predicate into the specific, deterministic
-legs invariant 1.7.2 permits: the model may have classified which
-template applies; it may not touch an account or an amount.
+decides whether the resulting entry is safe to auto-apply — that is the
+validator's chain. This module's only job is turning a fired predicate into
+the specific, deterministic legs the model is allowed to produce here: the
+model may have classified which template applies; it may not touch an
+account or an amount.
 
-**Amount derivation is §3.4's "Amount source" column, transcribed
+**Amount derivation is the templates' "Amount source" column, transcribed
 directly** (`TEMPLATE_LEG_ACCOUNTS` + `_LEG_DELTAS`), not re-derived from
 matcher or predicate output. `T-04` is the one template whose amount is
-not read off a `recon_line` field at all: §3.4 says "the ledger's
-premature `Bank Account` debit amount, whatever it is — not a recomputed
-net figure," so this module looks up the exact ledger entry the predicate
+not read off a `recon_line` field at all: it is the ledger's premature
+`Bank Account` debit amount, whatever it is — not a recomputed net figure —
+so this module looks up the exact ledger entry the predicate
 already cited (`PredicateHit.cited_record_ids[1]`, its `journal_entry_id`)
 and reads that entry's own `debit` field.
 
-**Zero-amount legs are omitted, not posted** (§3.4). Only `T-01`/`T-03`
+**Zero-amount legs are omitted, not posted.** Only `T-01`/`T-03`
 can ever exercise this in practice — `T-02`/`T-04`/`T-05`/`T-06` each
 carry one single-sourced amount that the firing predicate already
 required to be positive (`debit > 0` / `credit > 0` / a bank debit whose
@@ -33,16 +33,16 @@ refund and AMEX lines) collapses from three legs to two: `Dr Payment
 Gateway Charges / Cr Razorpay Clearing`, still a legal `T-01`
 instantiation, not a seventh template.
 
-**Aggregation: one entry per case per template** (§3.4). A settlement
+**Aggregation: one entry per case per template.** A settlement
 case can in principle carry more than one fired hit for the same template
 (e.g. two unposted-fee payments within one settlement) — the current
-generator never constructs that shape (session 2.1: each family case
+generator never constructs that shape (each family case
 plants exactly one anomalous entity), but the aggregation logic is
 written to the general rule regardless, summing every hit's leg deltas
 before applying zero-leg omission, with every contributing hit's cited
-record IDs carried into the aggregate entry's own citation list (§1.7.3).
+record IDs carried into the aggregate entry's own citation list.
 
-**Multiple templates per case are permitted** (§3.4) — `instantiate_case`
+**Multiple templates per case are permitted** — `instantiate_case`
 returns one `CandidateJournalEntry` per distinct template ID that fired,
 in `TemplateId` order for determinism.
 """
@@ -116,10 +116,11 @@ TEMPLATE_LEG_ACCOUNTS: dict[TemplateId, tuple[tuple[Account, ...], tuple[Account
     TemplateId.T05: ((ACCOUNT_RAZORPAY_CLEARING,), (ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS,)),
     TemplateId.T06: ((ACCOUNT_RAZORPAY_SETTLEMENT_ADJUSTMENTS,), (ACCOUNT_RAZORPAY_CLEARING,)),
 }
-"""§3.4's debit-legs / credit-legs account tuples, one entry per template, in table order.
+"""The templates' debit-legs / credit-legs account tuples, one entry per template, in table order.
 
-This is the fixed allowlist invariant 1.7.2 requires: an account and its
-side within a template are never a runtime choice, model or otherwise.
+This is the fixed allowlist that keeps the model off the money path: an
+account and its side within a template are never a runtime choice, model or
+otherwise.
 """
 
 LegDeltas = tuple[dict[str, int], dict[str, int]]
@@ -148,8 +149,8 @@ def _deltas_t03(line: ReconLine, _hit: PredicateHit, _ledger_by_id: Mapping[str,
 
 
 def _deltas_t04(_line: ReconLine, hit: PredicateHit, ledger_by_id: Mapping[str, LedgerEntry]) -> LegDeltas:
-    # §3.4: "the ledger's premature Bank Account debit amount, whatever it
-    # is — not a recomputed net figure." `_predicate_t04` cites
+    # The ledger's premature Bank Account debit amount, whatever it is —
+    # not a recomputed net figure. `_predicate_t04` cites
     # `(entity_id, bank_debit.journal_entry_id, [settlement.id])`.
     bank_debit = ledger_by_id[hit.cited_record_ids[1]]
     amount = int(bank_debit.debit)

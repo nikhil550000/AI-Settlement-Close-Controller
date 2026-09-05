@@ -1,4 +1,4 @@
-"""`pipeline/llm_cache.py`: the SHA-256-keyed prompt/response cache (§4.3).
+"""`pipeline/llm_cache.py`: the SHA-256-keyed prompt/response cache.
 
 Unit coverage of the cache primitive in isolation, separate from Slot A
 itself (`tests/test_llm_slot_a.py`) — a cache bug is cheapest to diagnose

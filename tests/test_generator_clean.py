@@ -1,4 +1,4 @@
-"""Phase 1 checkpoint (spec.md §6, line ~902): the three assertions.
+"""Phase 1 checkpoint (the design, line ~902): the three assertions.
 
 1. `generate --seed 1` runs end to end (CLI, via `typer.testing.CliRunner`).
 2. `settlement.amount == sum(credits) - sum(debits) - fees - tax` holds on

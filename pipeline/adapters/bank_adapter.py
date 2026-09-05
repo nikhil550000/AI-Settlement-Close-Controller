@@ -1,10 +1,10 @@
-"""FR-08's bank statement adapter: parses a CSV or XLSX export in any of
+"""The bank statement adapter: parses a CSV or XLSX export in any of
 the three declared profiles (`profiles/*.yaml`) into canonical `bank_line`
 records (`pipeline.schemas.BankLine`).
 
 The table's boundaries are found rather than configured, because a real
 export's junk-header-row count and trailing-summary-block shape are not
-knowable ahead of time (§2.6's own list of quirks the adapter MUST
+knowable ahead of time (the list of quirks the adapter must
 handle): the header row is the first row whose non-empty cells equal the
 profile's declared header exactly; the table ends at the first row below
 it whose value-date cell fails to parse under the profile's date format —
@@ -104,7 +104,7 @@ def _try_parse_date(row: list[str], index: int, date_format: str) -> dt.date | N
 
 
 def _synthetic_line_id(row_index: int, narration: str, value_date: dt.date, withdrawal: int, deposit: int) -> str:
-    """`line_id` is "string, unique, synthetic" (§3.1) — a real bank export carries no id column.
+    """`line_id` is a synthetic unique string: a real bank export carries no id column.
 
     Derived from row position plus content rather than drawn at random:
     the adapter has no RNG (parsing is deterministic by construction, not
@@ -113,7 +113,7 @@ def _synthetic_line_id(row_index: int, narration: str, value_date: dt.date, with
     collide on a genuine `DUPLICATE_CREDIT` pair. Excluding the profile
     tag from the hash is deliberate — it is what lets the same underlying
     row parsed from three different profile-shaped files land on the same
-    canonical id (spec.md §6.3's session-3.1 checkpoint).
+    canonical id.
     """
     digest = hashlib.sha1(
         f"{row_index}|{narration}|{value_date.isoformat()}|{withdrawal}|{deposit}".encode()

@@ -1,9 +1,9 @@
-"""JSONL loaders for the four §3.1 canonical schemas plus §1.6 ground truth.
+"""JSONL loaders for the four canonical schemas plus the ground-truth file.
 
 `generator/cli.py` writes each of these as one JSON object per line
 (`model_dump_json()` per record). Loading is the inverse: one
 `model_validate_json()` per line, in file order. No column mapping, no
-adapter logic — that complexity belongs to `pipeline/adapters/` (FR-08),
+adapter logic, because that complexity belongs to `pipeline/adapters/`,
 which exists because a *raw* bank export has none of this structure. The
 seeded reference batch is already in canonical post-generation shape, so
 "loading" it is exactly this and nothing more.

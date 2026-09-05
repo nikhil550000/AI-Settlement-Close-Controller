@@ -7,21 +7,22 @@ about arithmetic:
 
 | question | asked by | money path |
 |---|---|---|
-| does this narration name an external counterparty? | `pipeline.classifier` (§4.2's Slot A split) | no |
+| does this narration name an external counterparty? | `pipeline.classifier` (the classifier's split between a named party and generic wording) | no |
 | is this credit the payment gateway paying us? | `pipeline.case_assembly` (the settlement/orphan split) | no |
-| does this line say a credit was undone? | `pipeline.case_assembly`, `pipeline.predicates` (§3.3 `REVERSAL_UNMATCHED`) | no |
-| is this withdrawal a bank charge? | `pipeline.case_assembly` (§3.6's "charges stay noise") | no |
-| is this adjustment a tax position? | `pipeline.policy` (§2.5/FR-06's exclusion) | no |
-| which settlement does this contested credit pay? | `pipeline.matcher` (FR-09 tier-2 contention) | **yes** |
+| does this line say a credit was undone? | `pipeline.case_assembly`, `pipeline.predicates` (the `REVERSAL_UNMATCHED` trigger) | no |
+| is this withdrawal a bank charge? | `pipeline.case_assembly` ("charges stay noise") | no |
+| is this adjustment a tax position? | `pipeline.policy` (its exclusion of tax positions) | no |
+| which settlement does this contested credit pay? | `pipeline.matcher` (tier-2 contention) | **yes** |
 
 Until now each was answered in place by a literal-substring test against a
 tuple of keywords, and each of those tuples separated the generator's
 corresponding string pool with 100% hit and 0% miss. That is what made the
 reference batch score 1.0000 on the deterministic arm at seeds 0, 1, 2, 5, 7
 and 11 — a bijection between evidence and label, with no irreducible
-ambiguity for judgment to resolve. §4.1's import guard cannot detect it,
-because a shared *vocabulary* is not an import, and a seed sweep cannot
-detect it, because a seed does not vary a module constant.
+ambiguity for judgment to resolve. The pipeline's own import guard against
+`generator/` cannot detect it, because a shared *vocabulary* is not an
+import, and a seed sweep cannot detect it, because a seed does not vary a
+module constant.
 
 `data/heldout_vocab/` is the batch that made it visible: the same 150 cases
 and the same ground truth under a second, disjoint surface vocabulary. On it
@@ -34,33 +35,35 @@ collapses, and `align_ground_truth` raises. See `tools/heldout_vocabulary.py`.
 The five questions move behind one `NarrationSemantics` interface with two
 implementations. **`KeywordSemantics` is the default everywhere and is the
 existing logic moved, not rewritten** — same constants, same comparisons,
-same order — so the committed reference run stays byte-identical and NFR-01
-holds unchanged. `LlmSemantics` answers the same five questions with a
+same order — so the committed reference run stays byte-identical and
+determinism holds unchanged. `LlmSemantics` answers the same five questions with a
 constrained, cached model call, and falls back to `KeywordSemantics` on a
 strict-mode cache miss.
 
-That makes §5.4's ablation an experiment about the whole pipeline rather than
-about one classifier, and it puts the model where §4.2's own reasoning says a
-model belongs: on the questions where "no residual computation decides it" is
-true, and nowhere else.
+That makes the ablation an experiment about the whole pipeline rather than
+about one classifier, and it puts the model on the questions where no
+residual computation can decide them, and nowhere else.
 
-**Invariant 1.7.2 is untouched, and this module is why it stays that way.**
-Every method here returns a `bool`, a counterparty *name lifted out of text the
-bank wrote*, or the id of a settlement the deterministic cascade had already
-validated. None returns an account, an amount, a template, or a posting
-direction, and nothing downstream can turn one into any of those.
+**The model may classify and may write prose, but it may never originate an
+account, an amount, or a narration on the automated path — and this module is
+why that stays true.** Every method here returns a `bool`, a counterparty
+*name lifted out of text the bank wrote*, or the id of a settlement the
+deterministic cascade had already validated. None returns an account, an
+amount, a template, or a posting direction, and nothing downstream can turn
+one into any of those.
 
 **Five of the six only route a case; the sixth can misroute money, and is
-treated differently.** `resolve_contested_credit` runs only where FR-09 tier 2
-found more than one settlement claiming one credit — a contest the deterministic
-arm resolves by abstaining on all of them. A wrong answer there does not
-fabricate a number, but it does book a real credit against the wrong settlement,
-which lands as a **false match**, §1.6's primary safety metric. That is the
-point rather than an oversight: `data/contested/` exists so the question "can
-judgment be trusted on the money path, and how much verification does it need
-first?" is answered with a measurement instead of an opinion. Its failure
-direction is always toward abstention — a cache miss, a malformed answer or an
-unrecognised id all yield `None`, which is exactly what the keyword arm returns.
+treated differently.** `resolve_contested_credit` runs only where tier 2 of
+the matcher's cascade found more than one settlement claiming one credit — a
+contest the deterministic arm resolves by abstaining on all of them. A wrong
+answer there does not fabricate a number, but it does book a real credit
+against the wrong settlement, which lands as a **false match**, this
+pipeline's primary safety metric. That is the point rather than an oversight:
+`data/contested/` exists so the question "can judgment be trusted on the
+money path, and how much verification does it need first?" is answered with a
+measurement instead of an opinion. Its failure direction is always toward
+abstention — a cache miss, a malformed answer or an unrecognised id all yield
+`None`, which is exactly what the keyword arm returns.
 """
 
 from __future__ import annotations
@@ -112,8 +115,8 @@ TAX_POSITION_MARKERS = (
     "INPUT TAX CREDIT",
     "ITC",
 )
-"""Was `pipeline.policy._TAX_POSITION_MARKERS`. §2.5 names Sections 194-O and
-194-H and GST input-tax-credit eligibility on MDR directly, so the vocabulary
+"""Was `pipeline.policy._TAX_POSITION_MARKERS`. Sections 194-O and 194-H and
+GST input-tax-credit eligibility on MDR are named directly, so the vocabulary
 is domain-real — but it still covers both of the generator's two adjustment
 signatures and neither of its five neutral ones, and a batch that writes
 `194 O` with a space instead of a hyphen defeats it entirely. That failure
@@ -140,12 +143,14 @@ _MIN_COUNTERPARTY_TOKEN_LENGTH = 3
 
 
 class ContestedCandidate(BaseModel):
-    """One settlement competing for a contested bank credit (FR-09 tier 2).
+    """One settlement competing for a contested bank credit (matcher tier 2).
 
     Carries only what a reader would use to tell the candidates apart, and
     deliberately no amount: every candidate has *the same* amount — that is
     what made them contest in the first place — so an amount could not
-    discriminate even if invariant 1.7.2 permitted showing it.
+    discriminate even if the model were allowed to see it, and it is not:
+    the model may classify and may write prose, but it may never originate
+    an account, an amount, or a narration on the automated path.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -172,8 +177,8 @@ class NarrationSemantics(Protocol):
 
         `None` means the text names nobody — generic clearing, suspense or
         transfer wording. The payment gateway itself is not a counterparty
-        for this purpose: §3.3's `UNMATCHED_INBOUND_CREDIT` is about a credit
-        with *no Razorpay anchor*, so a line naming the gateway is a
+        for this purpose: the `UNMATCHED_INBOUND_CREDIT` trigger is about a
+        credit with *no Razorpay anchor*, so a line naming the gateway is a
         settlement credit, not an unmatched inbound one.
         """
 
@@ -184,40 +189,43 @@ class NarrationSemantics(Protocol):
         """Whether the narration says a credit was undone (reversed/returned)."""
 
     def is_bank_charge(self, narration: str) -> bool:
-        """Whether a withdrawal is the bank charging its own fee (§3.6 noise)."""
+        """Whether a withdrawal is the bank charging its own fee (noise, not a case)."""
 
     def is_tax_position(self, description: str) -> bool:
-        """Whether an adjustment description states a tax position (§2.5/FR-06)."""
+        """Whether an adjustment description states a tax position (excluded from auto-close)."""
 
     def resolve_contested_credit(
         self, narration: str, candidates: Sequence[ContestedCandidate]
     ) -> str | None:
         """Which candidate settlement a contested credit belongs to, or `None`.
 
-        **This is the one read on the money path, and it is opt-in.** FR-09 tier
-        2 keys off an exact amount inside a T+2 window, which is not unique to a
-        settlement; when two settlements contest one credit, `match_cases`
-        demotes both to tier 3 and the batch abstains. This asks whether the
-        narration says which one — the question a human resolves in seconds and
-        no rule in §4.6 can express.
+        **This is the one read on the money path, and it is opt-in.** The
+        matcher's tier 2 keys off an exact amount inside a T+2 window, which
+        is not unique to a settlement; when two settlements contest one
+        credit, `match_cases` demotes both to tier 3 and the batch abstains.
+        This asks whether the narration says which one — the question a
+        human resolves in seconds and no deterministic tier rule can express.
 
         `None` means "the evidence does not say", and it is the right answer
         whenever the narration carries no discriminator. Returning `None` is
-        never penalised by a safety metric; returning the wrong settlement is a
-        **false match**, §1.6's primary safety metric, which is precisely why
-        this experiment is worth running with that metric watching.
+        never penalised by a safety metric; returning the wrong settlement is
+        a **false match**, this pipeline's primary safety metric, which is
+        precisely why this experiment is worth running with that metric
+        watching.
 
         The answer is a *selection among candidates the deterministic cascade
         already validated* — each one already matched on amount and window — so
-        the model narrows a set it did not construct. It still cannot originate
-        an account, an amount, or a settlement, and invariant 1.7.2 holds.
+        the model narrows a set it did not construct. It still cannot
+        originate an account, an amount, or a settlement: the model may
+        classify and may write prose, but it may never originate an account,
+        an amount, or a narration on the automated path.
         """
 
 
 class KeywordSemantics:
     """The literal-substring implementation — today's behaviour, relocated.
 
-    This is `--semantics keyword`, the default, and §5.4's baseline arm for
+    This is `--semantics keyword`, the default, and the baseline arm for
     every one of the five questions. It is deliberately *not* improved while
     being moved: the point of the ablation is to measure this exact logic
     against a model, and quietly strengthening it here would measure
@@ -264,9 +272,10 @@ class KeywordSemantics:
     ) -> str | None:
         """Always `None` — and that is the honest baseline, not a stub.
 
-        §4.6 defines four tiers and none of them can read a payment-method word
-        out of a narration and line it up against a settlement's recon-line mix.
-        Writing such a rule here would be inventing scope, and it would also
+        The matcher defines four tiers and none of them can read a
+        payment-method word out of a narration and line it up against a
+        settlement's recon-line mix. Writing such a rule here would be
+        inventing scope, and it would also
         quietly hand the keyword arm the very capability the ablation is trying
         to measure. So the deterministic answer to "which of these two?" is "the
         evidence available to me does not say", the batch abstains, and
@@ -284,7 +293,7 @@ object identity in a codebase where identity is never the question.
 """
 
 
-# --- The LLM implementation (§4.2's Slot A, widened from one question to five). ---
+# --- The LLM implementation (Slot A, widened from one question to five). ---
 
 _COUNTERPARTY_SCHEMA: dict = {
     "type": "object",
@@ -340,8 +349,8 @@ abbreviations is the same move the keyword arm makes with
 `REVERSAL_KEYWORDS`, at the level of a concept's vocabulary rather than a
 batch's literals, so it is stated in the prompt rather than left to be
 guessed. It was written against `data/heldout_vocab/`, a development
-artifact — not §5.1's held-out seed-2 batch. No §5.5 threshold and no
-seed-2 measurement informed it.
+artifact — not the held-out seed-2 batch used for evaluation. No threshold
+review and no seed-2 measurement informed it.
 """
 
 _CHARGE_INSTRUCTIONS = (
@@ -369,7 +378,7 @@ class LlmSemantics:
     """The same five questions, answered by a constrained, cached model call.
 
     Mirrors `pipeline.classifier.classify_case_llm`'s contract exactly, for
-    the same §4.3 reasons: the prompt is deterministic, the response space is
+    the same reasons: the prompt is deterministic, the response space is
     closed by a JSON schema, every answer resolves through the SHA-keyed
     `PromptCache` first, and `CacheMode.STRICT` never constructs a network
     path.
@@ -524,7 +533,7 @@ class LlmSemantics:
         # `"NEFT CR RAZORPAY SOFTWARE PVT LTD SETTLEMENT"`, which says nothing,
         # it answered `setl_CRD01` anyway. That is a coin flip presented as an
         # answer, and on this read a coin flip books a real credit against the
-        # wrong settlement: a false match, the metric §1.6 ranks first.
+        # wrong settlement: a false match, this pipeline's primary safety metric.
         #
         # The fix is not a better prompt. It is to stop trusting the answer and
         # start checking the *justification*: the discriminator the model must

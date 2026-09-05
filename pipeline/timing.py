@@ -1,4 +1,4 @@
-"""The T+2 working-day settlement-window rule, per spec.md §3.3.
+"""The T+2 working-day settlement-window rule.
 
 > **Timing-residual rule.** A case reconciles cleanly when its residual is
 > fully attributable to an expected timing item — that is, the
@@ -10,8 +10,8 @@
 > public-holiday calendar. The weekends-only calendar is a deliberate
 > simplification and is disclosed as such.
 
-Lives under `pipeline/` (relocated here session 3.3; originally written
-generator-side in session 2.2, when it placed the family-4 no-op and
+Lives under `pipeline/` (relocated here; originally written
+generator-side in, when it placed the family-4 no-op and
 `BANK_CREDIT_OVERDUE` settlements on the correct side of the window while
 *constructing* the batch). `pipeline/matcher.py` needs the identical rule
 to *classify* cases at run time, and `tests/test_import_guard.py`
@@ -56,7 +56,7 @@ def subtract_working_days(start: date, n: int) -> date:
 
 
 def settlement_window_deadline(settlement_created_date: date) -> date:
-    """The last date (inclusive) on which the settlement window is still open (§3.3: T+2 working days)."""
+    """The last date (inclusive) on which the settlement window is still open (T+2 working days)."""
     return add_working_days(settlement_created_date, SETTLEMENT_WINDOW_WORKING_DAYS)
 
 

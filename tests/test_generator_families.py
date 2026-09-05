@@ -1,9 +1,9 @@
-"""Session 2.1 checkpoint (spec.md §6.3): the five FR-04 family injections.
+""" checkpoint: the five the anomaly families family injections.
 
 Checkpoint: **per-family counts assert to 10 each.** The supporting tests
 below additionally guard the arithmetic each family's ground truth depends
 on (settlement-amount invariant, global ledger balance, and each family's
-own evidence-predicate conjuncts from §3.4), so a wrong hand-derived
+own evidence-predicate conjuncts from the template definitions), so a wrong hand-derived
 correction amount fails loudly here rather than surfacing as a silent
 metric error in Phase 6.
 """
@@ -95,7 +95,7 @@ def test_expected_journal_entries_balance_per_case():
 
 
 def test_family_1_matches_t01_evidence_predicate():
-    """T-01 (§3.4): settled payment, fee > 0, no Payment Gateway Charges leg, Sales Revenue credit == gross."""
+    """T-01: settled payment, fee > 0, no Payment Gateway Charges leg, Sales Revenue credit == gross."""
     batch = generate_family_1_batch(random.Random(1), SNAPSHOT)
     referenced = {(e.account_code, e.reference) for e in batch.ledger_entries}
     for gt in batch.ground_truth:
@@ -104,26 +104,26 @@ def test_family_1_matches_t01_evidence_predicate():
         assert line.fee > 0
         assert ("5010", entity_id) not in referenced  # Payment Gateway Charges
         revenue_leg = next(e for e in batch.ledger_entries if e.reference == entity_id and e.account_code == "4010")
-        assert revenue_leg.credit == line.amount  # gross conjunct (REV-16)
+        assert revenue_leg.credit == line.amount  # gross conjunct
         assert gt.expected_template_ids == ("T-01",)
         assert gt.ground_truth_exception_subtype == ExceptionSubtype.OMISSION
 
 
 def test_family_3_matches_t03_evidence_predicate():
-    """T-03 (§3.4): settled payment, fee > 0, Sales Revenue credit == amount - fee - tax."""
+    """T-03: settled payment, fee > 0, Sales Revenue credit == amount - fee - tax."""
     batch = generate_family_3_batch(random.Random(1), SNAPSHOT)
     for gt in batch.ground_truth:
         entity_id = gt.expected_linked_source_records[0]
         line = next(line for line in batch.recon_lines if line.entity_id == entity_id)
         assert line.fee > 0
         revenue_leg = next(e for e in batch.ledger_entries if e.reference == entity_id and e.account_code == "4010")
-        assert revenue_leg.credit == line.amount - line.fee - line.tax  # net conjunct (REV-16)
+        assert revenue_leg.credit == line.amount - line.fee - line.tax  # net conjunct
         assert gt.expected_template_ids == ("T-03",)
         assert gt.ground_truth_exception_subtype == ExceptionSubtype.MISPOSTING
 
 
 def test_family_4_has_no_bank_line_and_posts_bank_account_leg():
-    """T-04's evidence predicate holds vacuously: no `bank_line` is generated this session (§3.2 precondition)."""
+    """T-04's evidence predicate holds vacuously: no `bank_line` is generated this session (the chart of accounts precondition)."""
     batch = generate_family_4_batch(random.Random(1), SNAPSHOT)
     for gt in batch.ground_truth:
         entity_id = gt.expected_linked_source_records[0]

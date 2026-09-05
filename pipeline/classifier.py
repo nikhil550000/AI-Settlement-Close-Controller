@@ -1,39 +1,37 @@
-"""The classifier, per spec.md §4.1 component 5.
+"""The classifier: exception class and subtype assignment.
 
-> **Classifier.** Exception class and subtype assignment.
+This session builds the two pieces of the design in order — build the
+deterministic keyword baseline first, then Slot A on top of it — and
+stops at the baseline. Slot A itself (the graded LLM call, constrained
+decoding, the SHA-keyed cache) is.
 
-This session (5.1, §6.3) builds the two pieces §4.2 asks for in order —
-"build the deterministic keyword baseline first, then Slot A on top of
-it" — and stops at the baseline. Slot A itself (the graded LLM call,
-constrained decoding, the SHA-keyed cache) is session 5.2's.
-
-## What component 5 actually decides, and what it does not
+## What this module actually decides, and what it does not
 
 Six of the seven `OPERATIONAL_EXCEPTION` subtypes already have a
 deterministic answer by the time a case reaches this module:
 `pipeline/predicates.py`'s `_settlement_anchored_triggers` and
 `_orphan_triggers` fire `SETTLEMENT_UTR_MISSING`, `BANK_CREDIT_OVERDUE`,
 `SETTLEMENT_AMOUNT_MISMATCH`, `DISPUTE_PENDING`, `REVERSAL_UNMATCHED` and
-`DUPLICATE_CREDIT` as *facts*, not labels — component 4's own docstring
-is explicit that evaluating is not assigning. Component 5's real job,
-the one no arithmetic answers, is the single split §4.2 names outright:
+`DUPLICATE_CREDIT` as *facts*, not labels — the predicate module's own
+docstring is explicit that evaluating is not assigning. This module's
+real job, the one no arithmetic answers, is a single split:
 
 > "`UNMATCHED_INBOUND_CREDIT` versus `AMBIGUOUS_CASE` on an orphan bank
 > credit turns entirely on whether the free-text narration identifies a
 > counterparty... and no residual computation decides it."
 
 So `classify_case_baseline` below does two things, not one: it *adopts*
-a fired trigger where one exists (component 5 assigning what component 4
-already found, rather than a second competing detector disagreeing with
-the first), and it *decides* the one open question — the narration read
-— for cases with no trigger at all. Both are "classification" under
-§4.1's job description; only the second is a judgment call.
+a fired trigger where one exists (this module assigning what the
+predicate stage already found, rather than a second competing detector
+disagreeing with the first), and it *decides* the one open question —
+the narration read — for cases with no trigger at all. Both count as
+classification; only the second is a judgment call.
 
 **What this leaves unresolved, on purpose.** The 17 `REVIEW_REQUIRED`
-cases (family-4 date-error, FR-06 tax) are `ACCOUNTING_CORRECTION` /
+cases (family-4 date-error, tax) are `ACCOUNTING_CORRECTION` /
 `OMISSION`-or-`MISPOSTING` in ground truth — subtypes that are not
-members of Slot A's eight-value output space at all (§4.2: "the seven
-`OPERATIONAL_EXCEPTION` subtypes plus `AMBIGUOUS_CASE`"). No trigger
+members of Slot A's eight-value output space at all (the seven
+`OPERATIONAL_EXCEPTION` subtypes plus `AMBIGUOUS_CASE`). No trigger
 fires on them and no narration signals a counterparty, so the baseline's
 fallthrough assigns `AMBIGUOUS_CASE` — a forced wrong answer for those
 17, not a bug: Slot A's vocabulary simply has no correct thing to say
@@ -45,33 +43,34 @@ must decide whether these 17 belong in `exception_subtype_precision`/
 
 ## The evidence bundle boundary
 
-Invariant 1.7.2 keeps accounts and amounts out of the model's hands on
-the money path; §4.2 draws the same boundary for Slot A ("it never sees
-or emits an account, an amount, or a postable narration"). `EvidenceBundle`
-is that boundary made concrete: every field is either a fact already
-computed by an earlier component (a fired trigger, a match tier, whether
-a template already fired) or free text a human would read to make this
-exact call (a bank line's own narration) — never a paise figure, an
-account code, or the constant ledger narration `pipeline/apply.py` posts.
-The same bundle is what session 5.2's Slot A prompt is built from, so the
+Accounts and amounts stay out of the model's hands on the money path,
+and the same boundary applies to Slot A: it never sees or emits an
+account, an amount, or a postable narration. `EvidenceBundle` is that
+boundary made concrete: every field is either a fact already computed
+by an earlier stage (a fired trigger, a match tier, whether a template
+already fired) or free text a human would read to make this exact call
+(a bank line's own narration) — never a paise figure, an account code,
+or the constant ledger narration `pipeline/apply.py` posts. The same
+bundle is what Slot A prompt is built from, so the
 boundary is enforced once, here, rather than re-drawn per caller.
 
 ## The interface question this session does not answer
 
-`pipeline/run.py`'s `KNOWN_GAPS` and BUILDLOG session 4.3's `Next` field
+`pipeline/run.py`'s `KNOWN_GAPS` and the session log's `Next` field
 both flag that closing the `UNMATCHED_INBOUND_CREDIT` gap requires
 `pipeline/apply.py`'s `assign_state` to read a classification alongside
 `CaseEvidence.subtype_triggers`, and leave the timing of that wiring open
-— "session 5.1's or 5.2's call". This session calls it: **not yet.**
+— " or 5.2's call". This session calls it: **not yet.**
 `classify_batch_baseline` runs downstream of `apply_batch`, over its
-`BatchOutcome` (component 5 needs to know which ~70 cases are *not*
-`AUTO_CLOSED`, which is component 8's answer, not component 4's) and
-produces classifications nobody yet consumes. Wiring the baseline back
-into state assignment now would let an unvalidated ablation arm change
-what `EXTERNAL_ACTION_REQUIRED` means before Slot A — the arm §5.4 grades
-it against — exists to compare it with. Session 5.2 threads the real
-classifier (baseline or Slot A) through `apply_batch` once both arms are
-buildable and the choice is real rather than one-sided.
+`BatchOutcome` (this module needs to know which ~70 cases are *not*
+`AUTO_CLOSED`, which is the apply stage's answer, not the predicate
+stage's) and produces classifications nobody yet consumes. Wiring the
+baseline back into state assignment now would let an unvalidated
+ablation arm change what `EXTERNAL_ACTION_REQUIRED` means before Slot A
+— the arm it is graded against — exists to compare it with.
+threads the real classifier (baseline or Slot A) through `apply_batch`
+once both arms are buildable and the choice is real rather than
+one-sided.
 """
 
 from __future__ import annotations
@@ -115,34 +114,34 @@ __all__ = [
 _NON_AUTO_CLOSE_STATES = frozenset(
     {OutcomeState.REVIEW_REQUIRED, OutcomeState.EXTERNAL_ACTION_REQUIRED, OutcomeState.ABSTAINED}
 )
-"""§4.2's "~70 non-auto-close cases": every terminal state but the two closed-clean
-ones, `AUTO_MATCHED` and `AUTO_CLOSED`. 150 - 30 - 50 = 70 exactly, by the §3.6
-batch totals, regardless of seed — every population's count is fixed by §3.5/§3.6,
-not drawn."""
+"""The "~70 non-auto-close cases": every terminal state but the two closed-clean
+ones, `AUTO_MATCHED` and `AUTO_CLOSED`. 150 - 30 - 50 = 70 exactly, by the fixed
+batch totals, regardless of seed — every population's count is fixed by the
+generator design, not drawn."""
 
 
 class ClassificationSource(StrEnum):
-    """How a classification was reached — carried in the audit trail (§1.7.3),
+    """How a classification was reached — carried in the audit trail,
     not just the label itself."""
 
     DETERMINISTIC_TRIGGER = "deterministic_trigger"
-    """Adopted from a §3.3 subtype trigger component 4 already fired."""
+    """Adopted from a subtype trigger the predicate stage already fired."""
 
     KEYWORD_BASELINE = "keyword_baseline"
-    """This session's deterministic classifier: the §5.4 ablation arm, and the
-    disclosed fallback if Phase 5 falls behind (§6.3)."""
+    """This session's deterministic classifier: the ablation arm, and the
+    disclosed fallback if Slot A falls behind."""
 
     LLM_SLOT_A = "llm_slot_a"
-    """§4.2's graded slot: `pipeline.llm_client.FIREWORKS_MODEL_ID` on Fireworks, under
-    constrained decoding, resolved through `pipeline.llm_cache.PromptCache` (§4.3). See
-    that constant's docstring for why it is not §4.4's literal `llama-v3p3-70b-instruct`."""
+    """The graded slot: `pipeline.llm_client.FIREWORKS_MODEL_ID` on Fireworks, under
+    constrained decoding, resolved through `pipeline.llm_cache.PromptCache`. See
+    that constant's docstring for why it is not the literal `llama-v3p3-70b-instruct`."""
 
 
 class EvidenceBundle(BaseModel):
-    """One case's classification-relevant evidence — the "structured evidence
-    bundle" §4.2 describes Slot A as receiving. See this module's docstring
-    for the boundary it enforces: facts and free text, never an account, an
-    amount, or a postable narration.
+    """One case's classification-relevant evidence — the structured evidence
+    bundle Slot A receives. See this module's docstring for the boundary it
+    enforces: facts and free text, never an account, an amount, or a postable
+    narration.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -150,17 +149,17 @@ class EvidenceBundle(BaseModel):
     case_id: str
     case_kind: CaseKind
     fired_subtypes: tuple[ExceptionSubtype, ...]
-    """§3.3 subtype triggers component 4 already fired on this case, in evaluator order."""
+    """Subtype triggers the predicate stage already fired on this case, in evaluator order."""
     has_template_hit: bool
-    """Whether any §3.4 template predicate fired — context, not a decision input:
+    """Whether any template predicate fired — context, not a decision input:
     a case reaching this bundle already failed to `AUTO_CLOSED` regardless."""
     narrations: tuple[str, ...]
     """This case's own `bank_line.narration` text — the only free text Slot A reads,
     and the entire evidence behind the `UNMATCHED_INBOUND_CREDIT` / `AMBIGUOUS_CASE` split."""
     match_tier: int | None
-    """The FR-09 tier the matcher resolved at (§4.6), settlement-anchored cases only."""
+    """The tier the matcher resolved at, settlement-anchored cases only."""
     in_settlement_window: bool | None
-    """Set only for a tier-3 (no-match) settlement-anchored case (§3.3's timing-residual rule)."""
+    """Set only for a tier-3 (no-match) settlement-anchored case, under the timing-residual rule."""
 
 
 class ClassificationResult(BaseModel):
@@ -178,12 +177,12 @@ class ClassificationResult(BaseModel):
 
 
 def non_auto_close_case_ids(outcomes: Sequence[CaseOutcome]) -> set[str]:
-    """§4.2's "~70 non-auto-close cases", by `case_id`."""
+    """The "~70 non-auto-close cases", by `case_id`."""
     return {outcome.case_id for outcome in outcomes if outcome.state in _NON_AUTO_CLOSE_STATES}
 
 
 def build_evidence_bundle(case: Case, evidence: CaseEvidence) -> EvidenceBundle:
-    """One case's `EvidenceBundle`, from component 2/3's `Case` and component 4's `CaseEvidence`."""
+    """One case's `EvidenceBundle`, from case assembly's `Case` and the predicate stage's `CaseEvidence`."""
     return EvidenceBundle(
         case_id=case.case_id,
         case_kind=case.kind,
@@ -200,7 +199,7 @@ def build_evidence_bundles(
     evidences: Sequence[CaseEvidence],
     outcomes: Sequence[CaseOutcome],
 ) -> list[EvidenceBundle]:
-    """Every eligible case's bundle, restricted to the ~70 non-auto-close cases (§4.2)."""
+    """Every eligible case's bundle, restricted to the ~70 non-auto-close cases."""
     eligible = non_auto_close_case_ids(outcomes)
     evidence_by_case = {evidence.case_id: evidence for evidence in evidences}
     return [
@@ -223,20 +222,21 @@ def build_evidence_bundles(
 def classify_case_baseline(
     bundle: EvidenceBundle, semantics: NarrationSemantics = KEYWORD
 ) -> ClassificationResult:
-    """The deterministic keyword baseline (§5.4's ablation arm; §6.3's disclosed fallback).
+    """The deterministic keyword baseline: the ablation arm, and the disclosed fallback.
 
     Three branches, in order:
 
-    1. **A trigger already fired.** Adopt it — component 5 assigning what
-       component 4 already found, not a second detector re-deciding it.
-       Where more than one fires (not observed against the reference batch;
-       nothing in §3.3 asserts exclusivity the way REV-16 does for
-       templates), the first in evaluator order wins, deterministically.
+    1. **A trigger already fired.** Adopt it — this module assigning what
+       the predicate stage already found, not a second detector re-deciding
+       it. Where more than one fires (not observed against the reference
+       batch; nothing asserts exclusivity between triggers the way template
+       predicates are kept mutually exclusive), the first in evaluator order
+       wins, deterministically.
     2. **An untriggered orphan case carrying exactly one bank-line
        narration** — the `UNMATCHED_INBOUND_CREDIT` / `AMBIGUOUS_CASE`
-       shape (§3.6: `REVERSAL_UNMATCHED` and `DUPLICATE_CREDIT` orphans
-       already fired a trigger in branch 1, so only the plain single-credit
-       shape reaches here). The narration keyword read decides it.
+       shape (`REVERSAL_UNMATCHED` and `DUPLICATE_CREDIT` orphans already
+       fired a trigger in branch 1, so only the plain single-credit shape
+       reaches here). The narration keyword read decides it.
     3. **Everything else** falls through to `AMBIGUOUS_CASE` — the least
        -wrong answer in an eight-value space that has no correct one for
        an untriggered, non-orphan case (see this module's docstring).
@@ -268,8 +268,7 @@ def classify_case_baseline(
 def classify_batch_baseline(
     bundles: Sequence[EvidenceBundle], semantics: NarrationSemantics = KEYWORD
 ) -> list[ClassificationResult]:
-    """The baseline over every bundle in a batch. Never raises on well-formed input —
-    session 5.1's checkpoint (§6.3): "baseline classifies all ~70 non-auto-close
+    """The baseline over every bundle in a batch. Never raises on well-formed input — checkpoint: "baseline classifies all ~70 non-auto-close
     cases without crashing.\""""
     return [classify_case_baseline(bundle, semantics) for bundle in bundles]
 
@@ -283,7 +282,7 @@ def classification_distribution(results: Sequence[ClassificationResult]) -> dict
     return counts
 
 
-# --- Slot A: the graded LLM classifier (§4.2, §4.3, §4.4, session 5.2). ---
+# --- Slot A: the graded LLM classifier. ---
 
 SUBTYPE_DEFINITIONS: dict[SubtypeLabel, str] = {
     SubtypeLabel.SETTLEMENT_UTR_MISSING: (
@@ -306,7 +305,7 @@ SUBTYPE_DEFINITIONS: dict[SubtypeLabel, str] = {
         "happened and who must act? If yes, one of the subtypes above. If no, this one."
     ),
 }
-"""§3.3's subtype table and `AMBIGUOUS_CASE` definition, transcribed verbatim (word for
+"""The subtype table and `AMBIGUOUS_CASE` definition, transcribed verbatim (word for
 word, not paraphrased) into the prompt. These sentences are what Slot A is graded
 against, so the model sees exactly the same test a human reviewer would apply — not a
 looser or tighter restatement of it."""
@@ -317,8 +316,8 @@ _SLOT_A_JSON_SCHEMA: dict = {
     "required": ["subtype"],
     "additionalProperties": False,
 }
-"""§4.3 layer 1: constrained decoding to the eight-value enum. Passed as Fireworks'
-`response_format` JSON schema (§4.4) — the output space is eight values even under
+"""Layer 1: constrained decoding to the eight-value enum. Passed as Fireworks'
+`response_format` JSON schema — the output space is eight values even under
 provider-side nondeterminism, which is what bounds it rather than leaving it open."""
 
 _SLOT_A_INSTRUCTIONS = (
@@ -340,14 +339,14 @@ whole cache at once."""
 def build_slot_a_prompt(bundle: EvidenceBundle) -> str:
     """The exact, deterministic prompt string Slot A sends — and the exact string
     `pipeline.llm_cache.cache_key` hashes. Two runs over the same batch produce the
-    same `EvidenceBundle` for a given case (§3.5/§3.6's populations are fixed by seed,
-    not redrawn), so the same case always hashes to the same cache entry.
+    same `EvidenceBundle` for a given case (the populations are fixed by seed, not
+    redrawn), so the same case always hashes to the same cache entry.
 
     Never includes `bundle.case_id`: two cases with identical evidence should read as
-    one cache entry, not two, and the boundary this bundle enforces (§4.2: "never sees
-    or emits an account, an amount, or a postable narration") extends to the prompt —
-    an internal case ID is bookkeeping, not evidence, and mixing it into the hashed
-    text would fragment the cache for no classification-relevant reason.
+    one cache entry, not two, and the boundary this bundle enforces (never sees or
+    emits an account, an amount, or a postable narration) extends to the prompt — an
+    internal case ID is bookkeeping, not evidence, and mixing it into the hashed text
+    would fragment the cache for no classification-relevant reason.
     """
     evidence = {
         "case_kind": bundle.case_kind.value,
@@ -394,8 +393,8 @@ def classify_case_llm(
 ) -> ClassificationResult:
     """One case through Slot A: cache lookup, then (only under `CacheMode.REFRESH`) a
     real Fireworks call on a miss. `CacheMode.STRICT` never constructs a network path —
-    a miss is `CacheMissError`, per §4.3's "hard error rather than a fallthrough to the
-    API" — so a `client` is not even required when every case is already cached.
+    a miss is `CacheMissError`, a hard error rather than a fallthrough to the API — so
+    a `client` is not even required when every case is already cached.
     """
     prompt = build_slot_a_prompt(bundle)
     raw = cache.get(prompt)
@@ -434,7 +433,7 @@ def classify_batch_llm(
     ]
 
 
-# --- The hybrid arm (§5.4's third comparator, added after the Phase 7 measurement). ---
+# --- The hybrid arm (a third comparator, added after the Phase 7 measurement). ---
 
 
 def classify_case_hybrid(
@@ -445,30 +444,30 @@ def classify_case_hybrid(
     client: LLMClient | None = None,
     on_cache_miss: str = "raise",
 ) -> ClassificationResult:
-    """Slot A scoped to the one split §4.2 actually reserves for it.
+    """Slot A scoped to the one split it is actually useful for.
 
     `classify_case_llm` puts all eight `SubtypeLabel` values in front of the
     model for every non-auto-close case. Measured against the reference batch
     that is strictly worse than doing nothing: six of the seven graded subtypes
-    have a deterministic §3.3 trigger, and `EvidenceBundle` — correctly, per
-    invariant 1.7.2 — carries no UTR, no amount and no dispute flag, so the
-    model cannot *check* six of the eight definitions it is asked to choose
-    between. It pattern-matches narration text instead, and the cost lands as
-    false positives on cases whose ground truth is `ABSTAINED`: confident
-    operational exceptions manufactured out of genuine ambiguity, which is the
-    worst error direction §1.3 names.
+    have a deterministic trigger, and `EvidenceBundle` — correctly, since
+    accounts and amounts stay out of the model's hands — carries no UTR, no
+    amount and no dispute flag, so the model cannot *check* six of the eight
+    definitions it is asked to choose between. It pattern-matches narration
+    text instead, and the cost lands as false positives on cases whose ground
+    truth is `ABSTAINED`: confident operational exceptions manufactured out of
+    genuine ambiguity, the worst error direction for a system like this.
 
     This arm keeps the same three branches as `classify_case_baseline` and
     swaps only the middle one:
 
-    1. **A trigger fired** — adopt it. Component 4 already answered; a model
-       that disagrees can only be wrong, since the trigger *is* the §3.3
-       definition evaluated on evidence the bundle does not carry.
+    1. **A trigger fired** — adopt it. The predicate stage already answered; a
+       model that disagrees can only be wrong, since the trigger *is* the
+       subtype definition evaluated on evidence the bundle does not carry.
     2. **An untriggered orphan case with exactly one narration** — the
        `UNMATCHED_INBOUND_CREDIT` / `AMBIGUOUS_CASE` read, and the only
-       judgment §4.2 assigns Slot A ("turns entirely on whether the free-text
-       narration identifies a counterparty"). Slot A answers, and its answer is
-       collapsed to that binary: anything other than
+       judgment Slot A is actually asked to make (it turns entirely on whether
+       the free-text narration identifies a counterparty). Slot A answers, and
+       its answer is collapsed to that binary: anything other than
        `UNMATCHED_INBOUND_CREDIT` reads as "no counterparty identified", which
        is `AMBIGUOUS_CASE`. The collapse is what keeps a label the model cannot
        verify from reaching the report.
@@ -476,8 +475,8 @@ def classify_case_hybrid(
 
     The model is therefore consulted on 16 of 70 cases at seed 0 rather than
     all 70, and `ClassificationResult.source` still names which of the three
-    branches produced each label, so the audit trail (§1.7.3) distinguishes an
-    adopted trigger from a model read without inspecting the arm.
+    branches produced each label, so the audit trail distinguishes an adopted
+    trigger from a model read without inspecting the arm.
     """
     if bundle.fired_subtypes:
         return ClassificationResult(

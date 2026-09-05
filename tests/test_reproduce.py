@@ -1,14 +1,14 @@
-"""The Phase 7 checkpoint, verbatim (spec.md §6.3/§6):
+"""The Phase 7 checkpoint, verbatim:
 
 > A clean clone, one documented command, metrics byte-identical to the
-> committed JSON (NFR-06).
+> committed JSON.
 
 `tests/test_cli.py` already proves two runs against the *same working
-tree* agree byte-for-byte; that is NFR-01, not NFR-06. NFR-06 is a claim
+tree* agree byte-for-byte; that is reproducibility, not byte-identical reproduction. Byte-identical reproduction is a claim
 about a **different checkout** entirely — no `.venv`, no `uv.lock`
 resolution already done, none of this process's own Python import cache —
 reproducing the exact bytes committed at `data/metrics.json`. Every other
-NFR-05/checkpoint test in this codebase discharges its claim against a
+offline mode/checkpoint test in this codebase discharges its claim against a
 real artifact rather than a stub (`tests/test_report.py`'s own docstring:
 "the checkpoint is discharged... build the report from a real run"); this
 is that same discipline applied to "clean clone," which cannot be faked by
@@ -71,12 +71,12 @@ def clean_clone(tmp_path_factory) -> Path:
 
 
 def test_pinned_metrics_json_exists_and_names_a_seed_and_a_sha():
-    """FR-13: "generator seed, git SHA, and the metrics JSON produced by
+    """The pinned run: "generator seed, git SHA, and the metrics JSON produced by
     that run" MUST be pinned and committed — read here as the precondition
     for the rest of this module, not as a fact this test discovers."""
     assert PINNED_METRICS_PATH.exists(), (
-        "data/metrics.json is not committed — FR-13's pin has not been run yet "
-        "(see BUILDLOG.md session 7.2)"
+        "data/metrics.json is not committed — the pinned run's pin has not been run yet "
+        ""
     )
     pinned = json.loads(PINNED_METRICS_PATH.read_text(encoding="utf-8"))
     provenance = pinned["provenance"]
@@ -124,7 +124,7 @@ def test_clean_clone_syncs_and_reproduces_the_committed_metrics_json_byte_identi
     reproduced_text = (out_dir / "metrics.json").read_text(encoding="utf-8")
     assert reproduced_text == pinned_text, (
         "the clean clone's reconcile run did not reproduce data/metrics.json "
-        "byte-identically — NFR-06 does not hold"
+        "byte-identically — byte-identical reproduction does not hold"
     )
 
 

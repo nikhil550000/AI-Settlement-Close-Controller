@@ -1,5 +1,5 @@
-"""Session 2.2 checkpoint (spec.md §6.3), non-settlement-anchored half:
-§3.6's four orphan populations (25 cases / 28 bank lines, REV-18's
+""" checkpoint, non-settlement-anchored half:
+the orphan populations' four orphan populations (25 cases / 28 bank lines, a revision's
 granularity correction) plus non-settlement noise (~50 lines, no cases).
 """
 
@@ -53,7 +53,7 @@ def test_population_holds_its_exact_case_and_line_count(name):
 
 
 def test_all_orphan_batches_combine_to_twenty_five_cases_and_twenty_eight_lines():
-    """§3.6's four-population total; REV-18: duplicate credit spans 6 lines across 3 cases, not 6 cases."""
+    """The orphan populations' four-population total; a later revision: duplicate credit spans 6 lines across 3 cases, not 6 cases."""
     batch = generate_all_orphan_batches(random.Random(1), SNAPSHOT)
     assert len(batch.ground_truth) == 25
     assert len(batch.bank_lines) == 28
@@ -71,7 +71,7 @@ def test_no_orphan_case_has_a_settlement_recon_or_ledger_record():
 
 
 def test_unmatched_inbound_credit_narration_names_a_counterparty():
-    """§4.2: this population versus the opaque one "turns entirely on whether the narration identifies a counterparty"."""
+    """The model-slot boundary: this population versus the opaque one "turns entirely on whether the narration identifies a counterparty"."""
     batch = generate_unmatched_inbound_credit_batch(random.Random(1), SNAPSHOT)
     for line in batch.bank_lines:
         assert any(counterparty in line.narration for counterparty in NAMED_COUNTERPARTIES)
@@ -93,7 +93,7 @@ def test_ambiguous_orphan_narration_is_opaque():
 
 
 def test_reversal_unmatched_is_a_withdrawal_and_reads_like_the_noise_reversals():
-    """§3.6 separates the two reversal populations by evidence — a matching prior credit — never by wording."""
+    """The orphan populations separates the two reversal populations by evidence — a matching prior credit — never by wording."""
     batch = generate_reversal_unmatched_batch(random.Random(1), SNAPSHOT)
     noise_reversal_templates = {
         narration_template(line.narration)
@@ -150,7 +150,7 @@ def test_noise_reversal_pairs_net_to_zero_and_share_a_utr():
 
 
 def _reference_tokens(narration: str) -> set[str]:
-    """The UTR-shaped tokens in a narration, found without any §4.6 matcher logic."""
+    """The UTR-shaped tokens in a narration, found without any the match cascade matcher logic."""
     return set(re.findall(r"[A-Z]{4}[0-9]{12}", narration))
 
 

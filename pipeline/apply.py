@@ -1,49 +1,46 @@
-"""Apply and re-reconcile, per spec.md §4.1 component 8.
+"""Apply and re-reconcile: ledger write under an idempotency constraint,
+residual recheck, terminal state assignment.
 
-> **Apply and re-reconcile.** Ledger write under the 1.7.4 idempotency
-> constraint, residual recheck, terminal state assignment.
-
-Three jobs, in that order, and the third is the one that produces §1.3's
+Three jobs, in that order, and the third is the one that produces the
 five terminal states.
 
-**The write is transactional, because §1.3 and §1.7.5 ask for different
-things and both are satisfiable at once.** §1.3 defines `AUTO_CLOSED` as
-an entry that "was ... applied to the synthetic ledger, and reconciliation
-was re-run confirming the post-adjustment residual is 0 paise" — apply
-first, then check. §1.7.5 requires that "any failed safety validation
-prevents auto-action", and the residual is one of its validations — so a
-failure must leave nothing behind. A transaction gives both: the legs are
-written, the ledger is re-reconciled *against the written rows*, and the
-transaction is committed only if the residual is 0. Otherwise it is rolled
-back and the case is declined with nothing posted. The residual is
-measured on the real post-write state, not on a projection of it.
+**The write is transactional, because "apply, then check" and "a failed
+safety validation must leave nothing behind" are both satisfiable at
+once.** `AUTO_CLOSED` means an entry that was applied to the synthetic
+ledger, and reconciliation was re-run confirming the post-adjustment
+residual is 0 paise — apply first, then check. A failed safety
+validation must prevent auto-action, and the residual is one of those
+validations — so a failure must leave nothing behind. A transaction
+gives both: the legs are written, the ledger is re-reconciled *against
+the written rows*, and the transaction is committed only if the residual
+is 0. Otherwise it is rolled back and the case is declined with nothing
+posted. The residual is measured on the real post-write state, not on a
+projection of it.
 
-**Reprocessing is idempotent in outcome, not only in writes.** §6.3's
-checkpoint for this session is "running the same batch twice posts nothing
-on the second pass", and invariant 1.7.4 is what guarantees it. A second
-run reconstructs the identical `resolution_id` for each `(case_id,
-template_id)` (§3.4), finds the same legs already in the ledger, and
-recognises the case as *already applied*: it posts nothing and reports
-`AUTO_CLOSED` again. Treating a prior identical posting as a validation
-failure instead would satisfy the letter of "posts nothing" while making
-the second run report different states from the first, which is not
-idempotence in any useful sense. A prior posting under the same key whose
-legs *differ* is not a replay — it is a real integrity problem, and the
-case is declined.
+**Reprocessing is idempotent in outcome, not only in writes.** This
+session's checkpoint is "running the same batch twice posts nothing on
+the second pass". A second run reconstructs the identical
+`resolution_id` for each `(case_id, template_id)`, finds the same legs
+already in the ledger, and recognises the case as *already applied*: it
+posts nothing and reports `AUTO_CLOSED` again. Treating a prior identical
+posting as a validation failure instead would satisfy the letter of
+"posts nothing" while making the second run report different states from
+the first, which is not idempotence in any useful sense. A prior posting
+under the same key whose legs *differ* is not a replay — it is a real
+integrity problem, and the case is declined.
 
-**Terminal state assignment is deterministic and lives here**, not in the
-classifier: §4.1 gives component 5 "exception class and subtype
-assignment" and gives component 8 "terminal state assignment". The rules
-are §3.3's, restated as code in `assign_state`.
+**Terminal state assignment is deterministic and lives here**, not in
+the classifier: the classifier owns exception class and subtype
+assignment, and this module owns terminal state assignment. The rules
+are restated as code in `assign_state`.
 
-**Correction outranks exception, and §3.3 says so.** Seven family-4 cases
-fire both a `T-04` template hit and the `BANK_CREDIT_OVERDUE` subtype
-trigger (session 4.1 measured this and left it for a downstream component
-to resolve). §3.3 defines `OPERATIONAL_EXCEPTION` as "a real discrepancy
-that **no journal entry can resolve**" — so a discrepancy a journal entry
+**Correction outranks exception.** Seven family-4 cases fire both a
+`T-04` template hit and the `BANK_CREDIT_OVERDUE` subtype trigger measured this and left it for a downstream component to
+resolve). `OPERATIONAL_EXCEPTION` is defined as a real discrepancy that
+**no journal entry can resolve** — so a discrepancy a journal entry
 *does* resolve, evidenced by the residual reaching 0, is not one. The
-precedence is read off the class definition rather than invented as a tie
--break.
+precedence is read off the class definition rather than invented as a
+tie-break.
 """
 
 from __future__ import annotations
@@ -82,16 +79,16 @@ from pipeline.validator import (
 APPLIED_NARRATION = "Controller adjustment"
 """The narration on every posted leg.
 
-A fixed string, not derived text. Invariant 1.7.2 forbids the model from
-originating a narration on the automated path, and §4.2 puts all
-model-written prose in Slot B, "ungraded, off the money path" — so the
-narration a posted row carries is a constant, and the per-case English
-lives in the report beside it, labelled as model-generated.
+A fixed string, not derived text. The model may classify and may write
+prose, but may never originate a narration on the automated path — all
+model-written prose lives in Slot B, ungraded and off the money path —
+so the narration a posted row carries is a constant, and the per-case
+English lives in the report beside it, labelled as model-generated.
 """
 
 
 class CaseOutcome(BaseModel):
-    """One case's terminal state and the full record of how it got there (§1.8 artifacts 2 and 5)."""
+    """One case's terminal state and the full record of how it got there."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -103,38 +100,38 @@ class CaseOutcome(BaseModel):
     """Entries actually posted to the ledger by this run."""
 
     replayed_entries: tuple[CandidateJournalEntry, ...] = ()
-    """Entries already posted by a previous run, recognised and not re-posted (§1.7.4)."""
+    """Entries already posted by a previous run, recognised and not re-posted."""
 
     proposed_entries: tuple[CandidateJournalEntry, ...] = ()
-    """FR-07: machine-readable, unapplied, carrying `decline_reason`."""
+    """Machine-readable, unapplied, carrying `decline_reason`."""
 
     policy_decisions: tuple[PolicyDecision, ...] = ()
     validations: tuple[ValidationReport, ...] = ()
 
     triggered_subtypes: tuple[ExceptionSubtype, ...] = ()
-    """§3.3 subtype triggers that fired — evidence, not yet a classification (component 5)."""
+    """Subtype triggers that fired — evidence, not yet a classification."""
 
     classified_subtype: SubtypeLabel | None = None
-    """Component 5's assigned label for this case, when a classifier ran (session 5.2).
+    """The classifier's assigned label for this case, when a classifier ran.
     Recorded for every case a classifier saw, whether or not it changed `state` — only
     `UNMATCHED_INBOUND_CREDIT` does (see `assign_state`); this field is the audit trail
-    for what component 5 said regardless."""
+    for what the classifier said regardless."""
 
     exception_class: ExceptionClass | None = None
-    """§3.3's class for this case — the second of the two labels §3.3 says every case
-    carries independently (session 6.2, `pipeline.exception_class`).
+    """This case's exception class — the second of two labels every case carries
+    independently, `pipeline.exception_class`).
 
     Filled by `apply_batch`, which holds both the `Case` and its finished `CaseOutcome`;
     `apply_case` leaves it `None` because the timing attribution it needs is a property
     of the case, not of the posting. A `CaseOutcome` built by hand in a test therefore
-    carries `None`, and §5.2's class confusion matrix rejects that rather than reading
+    carries `None`, and the class confusion matrix rejects that rather than reading
     it as `NONE` — an unassigned class and the `NONE` sentinel are different facts.
 
     It classifies; it decides nothing. No component reads it, it gates no posting, and
     `assign_state` neither takes nor returns it."""
 
     residual_paise: int = 0
-    """The books-versus-evidence residual after this run (§1.7.5, `pipeline.reconciliation`)."""
+    """The books-versus-evidence residual after this run (`pipeline.reconciliation`)."""
 
     @property
     def posted_leg_count(self) -> int:
@@ -169,8 +166,8 @@ class BatchOutcome(BaseModel):
 def seed_ledger(conn: sqlite3.Connection, entries: Sequence[LedgerEntry]) -> None:
     """Load the merchant's own bookkeeping into the ledger the Controller will correct.
 
-    The generator emits `ledger_entry` records as JSONL; §4.5 puts the
-    mutable ledger in SQLite. This is the one-time load between them, and
+    The generator emits `ledger_entry` records as JSONL; the mutable
+    ledger lives in SQLite. This is the one-time load between them, and
     it is separate from `apply_batch` so a run can be pointed at a ledger
     that already carries a previous run's adjustments — which is exactly
     what the second-pass idempotency check does.
@@ -259,19 +256,19 @@ def _ledger_rows(
     *,
     posting_date: date,
 ) -> list[LedgerEntry]:
-    """One `LedgerEntry` per leg, per §3.1's per-leg schema.
+    """One `LedgerEntry` per leg, per the per-leg schema.
 
     Every leg of one entry shares its `(case_id, resolution_id)` and is
-    separated by `account_code` — REV-24's uniqueness triple. `reference`
+    separated by `account_code` — the uniqueness triple. `reference`
     names the first cited source record, which is the recon line the
     predicate fired on; the authoritative case link is the `case_id`
     column, so an aggregate over several records is still fully attributed
-    (§3.4's "every contributing record ID cited in the audit trail" lives
-    on the candidate, which the audit trail carries).
+    (every contributing record ID cited in the audit trail lives on the
+    candidate, which the audit trail carries).
 
     Only ever called on a candidate that has passed validation, so
     `cited_record_ids` is non-empty: `CITED_RECORDS_EXIST` rejects an
-    entry citing nothing (§1.7.3).
+    entry citing nothing.
     """
     reference = candidate.cited_record_ids[0]
     return [
@@ -301,50 +298,49 @@ def assign_state(
     residual_paise: int,
     classified_unmatched_inbound_credit: bool = False,
 ) -> tuple[OutcomeState, DeclineReason | None]:
-    """§1.3's five terminal states, assigned from evidence (§3.3's population mapping).
+    """The five terminal states, assigned from evidence.
 
-    `classified_unmatched_inbound_credit` is component 5's one contribution to state
-    routing (session 5.2's interface decision, deferred by session 5.1): of the eight
-    labels a classifier can assign, seven are adopted from a trigger component 4
-    already fired (branch 4 already sees those via `triggered_subtypes`), and
-    `AMBIGUOUS_CASE` changes nothing (branch 6 is already its fallthrough).
-    `UNMATCHED_INBOUND_CREDIT` is the one label with no deterministic trigger behind
-    it — "turns entirely on whether the free-text narration identifies a
-    counterparty" (§4.2) — so it is the only classification that can move a case out
-    of branch 6 and into branch 4. Default `False` so every pre-5.2 caller (and every
-    case a classifier never saw) is unaffected.
+    `classified_unmatched_inbound_credit` is the classifier's one contribution to
+    state routing interface decision, deferred by: of
+    the eight labels a classifier can assign, seven are adopted from a trigger the
+    predicate stage already fired (branch 4 already sees those via
+    `triggered_subtypes`), and `AMBIGUOUS_CASE` changes nothing (branch 6 is
+    already its fallthrough). `UNMATCHED_INBOUND_CREDIT` is the one label with no
+    deterministic trigger behind it — it turns entirely on whether the free-text
+    narration identifies a counterparty — so it is the only classification that can
+    move a case out of branch 6 and into branch 4. Default `False` so every
+    pre-5.2 caller (and every case a classifier never saw) is unaffected.
 
-    The order of the branches is the precedence, and each is §3.3's:
+    The order of the branches is the precedence:
 
-    1. A **policy exclusion** (§2.5) routes to `REVIEW_REQUIRED` with
+    1. A **policy exclusion** routes to `REVIEW_REQUIRED` with
        `decline_reason = policy`, before anything else is considered —
-       "regardless of model confidence", and regardless of the fact that
+       regardless of model confidence, and regardless of the fact that
        the entry would have validated.
-    2. A **correction that landed** is `AUTO_CLOSED` (§1.3): instantiated
+    2. A **correction that landed** is `AUTO_CLOSED`: instantiated
        from an allowlisted template, validated, applied, and re-reconciled
        to 0 paise. This outranks any subtype trigger the case also fired,
-       because §3.3 defines `OPERATIONAL_EXCEPTION` as a discrepancy no
+       because `OPERATIONAL_EXCEPTION` is defined as a discrepancy no
        journal entry can resolve.
     3. A **correction that did not land** is `REVIEW_REQUIRED` with
        `decline_reason = confidence`: a candidate existed but failed the
-       1.7.5 chain. §1.6 fixes this reading — the only ground-truth
-       `REVIEW_REQUIRED` population is policy, and confidence declines
-       "appear instead as cases whose ground truth is `AUTO_CLOSED` that
-       the system declined".
+       validation chain. The only ground-truth `REVIEW_REQUIRED` population
+       is policy, and confidence declines appear instead as cases whose
+       ground truth is `AUTO_CLOSED` that the system declined.
     4. A fired **subtype trigger** — or a classifier-assigned
        `UNMATCHED_INBOUND_CREDIT`, see above — with no correction is
-       `EXTERNAL_ACTION_REQUIRED` (§3.3: `OPERATIONAL_EXCEPTION`'s terminal
+       `EXTERNAL_ACTION_REQUIRED` (`OPERATIONAL_EXCEPTION`'s terminal
        state).
     5. A **zero residual** with nothing to correct and nothing to escalate
-       is `AUTO_MATCHED` — §1.3's "reconciles cleanly with no accounting
-       action required", covering both the fully-clean population and
-       §3.3's `EXPECTED_TIMING_DIFFERENCE`, whose residual the matcher's
-       timing rule already zeroed.
+       is `AUTO_MATCHED`: reconciles cleanly with no accounting action
+       required, covering both the fully-clean population and
+       `EXPECTED_TIMING_DIFFERENCE`, whose residual the matcher's timing
+       rule already zeroed.
     6. Anything left is `ABSTAINED`: a non-zero residual that no template
-       explains and no trigger categorises is §3.3's `AMBIGUOUS_CASE` —
-       "a required piece of evidence is absent", and §1.3's "no defensible
-       candidate can be recommended". This is the fallthrough §2.3 calls
-       for, reached on evidence rather than by accident.
+       explains and no trigger categorises is `AMBIGUOUS_CASE` — a
+       required piece of evidence is absent, and no defensible candidate
+       can be recommended. This is the intended fallthrough, reached on
+       evidence rather than by accident.
     """
     if declined_by_policy:
         return OutcomeState.REVIEW_REQUIRED, DeclineReason.POLICY
@@ -376,8 +372,8 @@ def apply_case(
     `state` carries the ledger as it stands, including anything a previous
     run posted, so the idempotency checks see prior adjustments.
 
-    `classification` is component 5's label for this case, when a classifier
-    ran (session 5.2) — `None` on a first pass, or for any case a classifier
+    `classification` is the classifier's label for this case, when a classifier
+    ran — `None` on a first pass, or for any case a classifier
     never saw. See `assign_state` for the one label (`UNMATCHED_INBOUND_CREDIT`)
     that can change the outcome; every other label is recorded on
     `CaseOutcome.classified_subtype` without affecting `state`.
@@ -410,8 +406,8 @@ def apply_case(
         )
 
     if policy_decisions:
-        # §2.5: detected and classified, never auto-posted. FR-07 requires the
-        # proposed entry travel with the case in the same schema as an applied one.
+        # Detected and classified, never auto-posted. The proposed entry must
+        # travel with the case in the same schema as an applied one.
         return CaseOutcome(
             case_id=case.case_id,
             state=OutcomeState.REVIEW_REQUIRED,
@@ -432,9 +428,9 @@ def apply_case(
         already = state.posted_legs_for(candidate.case_id, resolution_id)
         if already:
             if _is_identical_replay(candidate, already):
-                # Invariant 1.7.4: reprocessing cannot double-post. The prior
-                # posting *is* this correction, so the case stays AUTO_CLOSED
-                # and nothing is written.
+                # Reprocessing cannot double-post. The prior posting *is* this
+                # correction, so the case stays AUTO_CLOSED and nothing is
+                # written.
                 replayed.append(candidate)
                 reports.append(
                     ValidationReport(
@@ -484,8 +480,8 @@ def apply_case(
         if candidate not in to_post and candidate not in replayed
     ]
 
-    # A case closes all-or-nothing. §3.4 permits several templates on one case,
-    # and §1.7.5's residual check is a statement about the case's books, not
+    # A case closes all-or-nothing. Several templates may fire on one case,
+    # and the residual check is a statement about the case's books, not
     # about one entry — posting the entries that validated while declining the
     # rest would leave the books in a state neither `AUTO_CLOSED` nor the
     # original, and the residual could not reach 0 either way.
@@ -507,8 +503,8 @@ def apply_case(
         for candidate in to_post:
             rows += _ledger_rows(candidate, resolution_id_for(candidate.template_id), posting_date=posting_date)
 
-        # §1.3 applies first and re-reconciles against what was written; §1.7.5
-        # requires a failure to leave nothing behind. The transaction is both.
+        # AUTO_CLOSED applies first and re-reconciles against what was written;
+        # a failed validation requires leaving nothing behind. The transaction is both.
         insert_ledger_entries(conn, rows, commit=False)
         state.add(rows)
 
@@ -572,7 +568,7 @@ def apply_case(
 
 
 def _exception_class(case: Case, outcome: CaseOutcome) -> ExceptionClass:
-    """§3.3's class for a finished case (session 6.2, `pipeline.exception_class`).
+    """This case's exception class, for a finished case, `pipeline.exception_class`).
 
     Assigned here rather than inside `apply_case` because the timing
     attribution is a property of the `Case` — the matcher's own reason for
@@ -602,9 +598,9 @@ def apply_batch(
     classifications: Mapping[str, SubtypeLabel] | None = None,
     semantics: NarrationSemantics = KEYWORD,
 ) -> BatchOutcome:
-    """Run component 8 over a whole batch. `conn` must already hold the merchant ledger.
+    """Run apply and re-reconcile over a whole batch. `conn` must already hold the merchant ledger.
 
-    `classifications` is component 5's output, keyed by `case_id` (session 5.2) —
+    `classifications` is the classifier's output, keyed by `case_id` —
     `None` (the default) reproduces every pre-5.2 call exactly. `pipeline.run.run_batch`
     calls this twice when a classifier is supplied: once with `classifications=None` to
     find the non-auto-close cases a classifier needs to see, and again with its output,
@@ -643,7 +639,7 @@ def apply_batch(
 
 
 def orphan_cases_never_post(outcomes: Sequence[CaseOutcome], cases: Sequence[Case]) -> bool:
-    """No orphan case may carry a posted entry — no §3.4 template addresses one (§3.6)."""
+    """No orphan case may carry a posted entry — no template addresses one."""
     orphan_ids = {case.case_id for case in cases if case.kind is CaseKind.ORPHAN}
     return not any(
         outcome.applied_entries or outcome.replayed_entries

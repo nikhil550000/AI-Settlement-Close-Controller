@@ -1,29 +1,28 @@
-"""Slot B, per spec.md §4.2 and session 5.3 (§6.3).
+"""Slot B: resolution text, abstention rationale, per-case reasoning prose.
 
 > **Slot B — resolution text, abstention rationale, per-case reasoning
 > prose. LLM. Ungraded, off the money path.**
 > `EXTERNAL_ACTION_REQUIRED` requires a recommended external action in
-> readable English (§1.3); `ABSTAINED` requires a rationale. Both are
+> readable English; `ABSTAINED` requires a rationale. Both are
 > language tasks over facts the deterministic path has already fixed.
-> The FR-11 report MUST label every Slot B string as model-generated
+> The report MUST label every Slot B string as model-generated
 > prose over deterministic facts, so narration can never be mistaken for
 > evidence in the audit trail.
 
-Unlike Slot A (component 5, `pipeline/classifier.py`), Slot B changes no
-outcome state and posts nothing — §4.2 calls it "ungraded, off the money
-path", and no §1.6 metric grades it. It is not a numbered §4.1 component
-of its own; its output is raw material for component 9's (Reporter)
-"Exception report" artifact (§1.8 item 3), still unbuilt (Phase 6). This
-session's job, per §6.3's row for 5.3, is narrower than that report: the
-text itself, generated deterministically-prompted and cached exactly like
-Slot A, plus a schema shape that carries FR-11's model-generated label as
-data rather than as a convention the eventual report author has to
-remember.
+Unlike Slot A (the classifier component, `pipeline/classifier.py`), Slot B
+changes no outcome state and posts nothing — it is ungraded and off the money
+path, and no scoring metric grades it. It is not a numbered pipeline
+component of its own; its output is raw material for the Reporter's
+"Exception report" artifact, still unbuilt. This module's job is narrower
+than that report: the text itself, generated deterministically-prompted and
+cached exactly like Slot A, plus a schema shape that carries the
+model-generated label as data rather than as a convention the eventual
+report author has to remember.
 
-**Reuses Slot A's infrastructure rather than duplicating it**, per
-session 5.2's own "Next" field: `pipeline.llm_client.LLMClient`/
-`FireworksClient` and `pipeline.llm_cache.PromptCache`/`CacheMode` are
-backend-agnostic already. The same committed `data/llm_cache.json` holds
+**Reuses Slot A's infrastructure rather than duplicating it.**
+`pipeline.llm_client.LLMClient`/`FireworksClient` and
+`pipeline.llm_cache.PromptCache`/`CacheMode` are backend-agnostic already.
+The same committed `data/llm_cache.json` holds
 both slots' entries side by side — the cache keys on the exact prompt
 string (SHA-256), and Slot A's and Slot B's prompts are never
 byte-identical, so nothing about one slot's entries can collide with or
@@ -72,8 +71,8 @@ __all__ = [
 ]
 
 class NarrationKind(StrEnum):
-    """§4.2's two Slot B text kinds — one per eligible terminal state, never both
-    on one case, since a case has exactly one terminal state (§1.3)."""
+    """Slot B's two text kinds — one per eligible terminal state, never both
+    on one case, since a case has exactly one terminal state."""
 
     RECOMMENDED_ACTION = "recommended_action"
     """`EXTERNAL_ACTION_REQUIRED`: "a recommended external action in readable English.\""""
@@ -86,7 +85,7 @@ _NARRATION_STATES: dict[OutcomeState, NarrationKind] = {
     OutcomeState.EXTERNAL_ACTION_REQUIRED: NarrationKind.RECOMMENDED_ACTION,
     OutcomeState.ABSTAINED: NarrationKind.ABSTENTION_RATIONALE,
 }
-"""The only two terminal states §4.2's Slot B paragraph names. A module-level
+"""The only two terminal states that get Slot B text. A module-level
 constant rather than an inline literal so `build_narration_bundle`'s filter and
 its state-to-kind mapping cannot drift apart."""
 
@@ -95,11 +94,11 @@ class NarrationBundle(BaseModel):
     """One case's Slot-B-relevant evidence — deliberately the same shape of thing
     `pipeline.classifier.EvidenceBundle` is for Slot A: facts the deterministic path
     has already fixed, never an account, an amount, or a posted ledger narration.
-    §4.2 draws that boundary for Slot A explicitly; nothing in §4.2's Slot B
-    paragraph asks for money or accounts either — a recommended action or an
-    abstention rationale is prose about *why*, not about *how much* — so the same
-    boundary is kept here as the narrower, defensible reading rather than invented
-    scope in the other direction.
+    That boundary is drawn for Slot A explicitly; Slot B asks for no money or
+    accounts either — a recommended action or an abstention rationale is prose
+    about *why*, not about *how much* — so the same boundary is kept here as
+    the narrower, defensible reading rather than invented scope in the other
+    direction.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -108,12 +107,12 @@ class NarrationBundle(BaseModel):
     kind: NarrationKind
     case_kind: CaseKind
     classified_subtype: SubtypeLabel | None
-    """Component 5's label for this case, when a classifier ran (§6.3 session 5.2).
+    """The classifier's label for this case, when a classifier ran.
     `None` when `run_batch` was called with no classifier — Slot B still has a
     narration to write in that case (the triggered subtypes and narrations below
     are enough), just without the classifier's own answer to ground it in."""
     triggered_subtypes: tuple[ExceptionSubtype, ...]
-    """§3.3 subtype triggers component 4 fired on this case (`CaseOutcome.triggered_subtypes`)."""
+    """The subtype triggers that fired on this case (`CaseOutcome.triggered_subtypes`)."""
     narrations: tuple[str, ...]
     """This case's own `bank_line.narration` text, exactly as `EvidenceBundle` carries it."""
     match_tier: int | None
@@ -121,19 +120,18 @@ class NarrationBundle(BaseModel):
 
 
 class CaseNarration(BaseModel):
-    """One case's Slot B text, plus the FR-11 labelling obligation carried as data.
+    """One case's Slot B text, plus the model-generated labelling obligation carried as data.
 
-    > The FR-11 report MUST label every Slot B string as model-generated
+    > The report MUST label every Slot B string as model-generated
     > prose over deterministic facts.
 
-    There is no FR-11 report yet (Phase 6, session 6.3) for this label to be
-    rendered into, but the obligation is a schema/data one regardless of
-    whether anything renders it today: `model_generated` travels with every
-    string this module produces, fixed `True` by construction (v1 has no
-    deterministic fallback for Slot B — unlike Slot A, §4.2 names no ablation
-    baseline for it), so a future reporter reads the flag off the record
-    rather than needing to know out-of-band that every string here is prose,
-    not evidence.
+    There is no report yet for this label to be rendered into, but the
+    obligation is a schema/data one regardless of whether anything renders it
+    today: `model_generated` travels with every string this module produces,
+    fixed `True` by construction (v1 has no deterministic fallback for Slot
+    B — unlike Slot A, there is no ablation baseline for it), so a future
+    reporter reads the flag off the record rather than needing to know
+    out-of-band that every string here is prose, not evidence.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -163,7 +161,7 @@ def build_narration_bundle(case: Case, outcome: CaseOutcome) -> NarrationBundle 
 
 def build_narration_bundles(cases: Sequence[Case], outcomes: Sequence[CaseOutcome]) -> list[NarrationBundle]:
     """Every eligible case's bundle, restricted to `EXTERNAL_ACTION_REQUIRED` and
-    `ABSTAINED` — the two states §4.2's Slot B paragraph names. Takes a finished
+    `ABSTAINED` — the two states that get Slot B text. Takes a finished
     `pipeline.run.RunResult`'s own `cases`/`outcome.outcomes` (see this module's
     docstring for why there is no second `apply_batch` pass here)."""
     outcome_by_case = {outcome.case_id: outcome for outcome in outcomes}
@@ -269,15 +267,15 @@ def deterministic_narration(bundle: NarrationBundle) -> CaseNarration:
     """Slot B's disclosed fallback: prose assembled from facts the deterministic
     path already fixed, carrying `model_generated=False`.
 
-    Slot B had no fallback in v1 because §4.2 names no ablation arm for it, and
+    Slot B had no fallback in v1 because there is no ablation arm for it, and
     a `CacheMissError` was the honest strict-mode answer while the only batch
     anyone ran was the committed seed-0 one. That stopped being true the moment
-    FR-10's CLI shipped: `uv run generate --seed 5` followed by `uv run
+    the CLI shipped: `uv run generate --seed 5` followed by `uv run
     reconcile --data-dir ...` is a path the README itself invites, and every
     Slot B prompt on an unseen batch is a guaranteed miss. Ending the product's
-    one command in an unhandled traceback is not a defensible reading of §4.3's
-    "hard error rather than a fallthrough to the API" — that rule exists to keep
-    the *network* out of the eval path, not to make the CLI brittle.
+    one command in an unhandled traceback is not a defensible reading of the
+    "hard error rather than a fallthrough to the API" rule — that rule exists
+    to keep the *network* out of the eval path, not to make the CLI brittle.
 
     So the miss degrades to this, labelled, exactly the way Slot A degrades to
     its keyword baseline: the reader is told which cases carry model prose and
@@ -295,8 +293,9 @@ def deterministic_narration(bundle: NarrationBundle) -> CaseNarration:
     else:
         text = (
             f"Abstained ({label}). The evidence on this case does not justify an automated "
-            "decision: no §3.4 template predicate fired and the available narration does not "
-            "identify a counterparty. Escalated as-is for human investigation."
+            "decision: no correcting-entry template predicate fired and the available "
+            "narration does not identify a counterparty. Escalated as-is for human "
+            "investigation."
         )
     return CaseNarration(
         case_id=bundle.case_id,
@@ -319,9 +318,9 @@ def narrate_case_llm(
     exactly — `CacheMode.STRICT` never constructs a network path.
 
     `on_cache_miss` selects what a strict-mode miss does: `"raise"` (the default,
-    and the contract every §4.3 checkpoint asserts) or `"fallback"`, which returns
-    `deterministic_narration(bundle)` instead. FR-10's CLI passes `"fallback"` so
-    that pointing the product at a batch outside the committed cache degrades to
+    and the contract every determinism checkpoint asserts) or `"fallback"`, which
+    returns `deterministic_narration(bundle)` instead. The CLI passes `"fallback"`
+    so that pointing the product at a batch outside the committed cache degrades to
     labelled deterministic prose rather than an unhandled traceback.
     """
     prompt = build_slot_b_prompt(bundle)

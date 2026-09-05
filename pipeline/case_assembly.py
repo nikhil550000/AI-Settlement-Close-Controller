@@ -1,29 +1,28 @@
-"""Case assembly, per spec.md §4.1 component 2 and §1.2.
+"""Case assembly: turning settlements, recon lines and bank lines into cases.
 
 > **Case assembly.** Recon lines grouped by `settlement_id` -> settlement-
-> anchored cases; residual bank lines -> orphan cases (§1.2).
+> anchored cases; residual bank lines -> orphan cases.
 
 Two independent halves, combined by `assemble_cases`:
 
-**Settlement-anchored** (§3.5: "each case is one settlement," confirmed by
+**Settlement-anchored** (each case is one settlement, confirmed by
 every generator population using `case_id == settlement.id`): one case per
 `Settlement`, holding every `recon_line` whose `settlement_id` matches it.
-`ledger_entry` attachment is deliberately **not** this component's job —
-see the module-level "Decided" note in BUILDLOG.md session 3.2. A later
-component resolves a case's ledger evidence by looking up
+`ledger_entry` attachment is deliberately **not** this component's job.
+A later component resolves a case's ledger evidence by looking up
 `ledger_entry.reference` against the case's own recon-line `entity_id`s at
 the point it needs them, rather than case assembly pre-attaching a subset
 that isn't yet known to be relevant.
 
-**Orphan** (§1.2, §3.6, REV-18): every `bank_line` not already evidence for
-a settlement credit becomes a candidate. §3.6's population definitions
+**Orphan**: every `bank_line` not already evidence for a settlement credit
+becomes a candidate. The orphan population definitions
 (`UNMATCHED_INBOUND_CREDIT`, `AMBIGUOUS_CASE`, `REVERSAL_UNMATCHED`,
 `DUPLICATE_CREDIT`) are a **classification** the exception-subtype
-classifier (component 5, §4.2 Slot A) assigns — not this component's job
-either. What case assembly must decide is narrower and purely structural:
-does a case exist for this line at all, and how many lines does it span
-(REV-18's granularity correction: a duplicate credit and the original
-share one case).
+classifier (Slot A) assigns — not this component's job either. What case
+assembly must decide is narrower and purely structural: does a case exist
+for this line at all, and how many lines does it span (a duplicate credit
+and the original share one case, at the case-assembly granularity that
+governs it).
 
 That narrower question is answered from four pieces of evidence, all
 already present in `bank_line`, none of it borrowed from the generator:
@@ -34,21 +33,21 @@ already present in `bank_line`, none of it borrowed from the generator:
    remitter as one of a small set of "RAZORPAY ..." party strings, because
    that is what a real NEFT/RTGS credit *from* Razorpay would show in the
    remitter field. This is the one piece of evidence that lets case
-   assembly run before the matcher (component 3, session 3.3) exists: it
+   assembly run before the matcher (the matching component) exists: it
    does not need to know *which* settlement a credit belongs to, only that
    it is presumptively spoken for.
 2. **A bank-charge-shaped debit** (narration reads as a fee/charge line)
-   carries no case — §3.6: "Bank charges stay noise, not cases."
+   carries no case — bank charges stay noise, not cases.
 3. **A reversal-shaped debit** (narration reads as a reversal/return) is
    checked against every remaining credit for a shared reference token. A
    match means the credit and its own reversal net to a wash in the same
    statement — noise, not a case, and neither line is a candidate for
    anything else. No match means `REVERSAL_UNMATCHED` — one case, one line.
 4. **Any other debit** (an ordinary outbound transfer to an unrelated
-   party) is noise; nothing in §3.6 makes an outbound-only line a case.
+   party) is noise; an outbound-only line never becomes a case.
 5. **Remaining credits** pair up when two of them share identical
-   narration, amount and value date — REV-18's duplicate-credit signature
-   — and form one two-line case. An unpaired remaining credit is a
+   narration, amount and value date — the duplicate-credit signature —
+   and form one two-line case. An unpaired remaining credit is a
    one-line case (`UNMATCHED_INBOUND_CREDIT` or `AMBIGUOUS_CASE`
    underneath, for the classifier to tell apart).
 """
@@ -72,7 +71,7 @@ from pipeline.semantics import KEYWORD, NarrationSemantics
 # module's docstring for what measuring them together revealed.
 
 _REFERENCE_TOKEN_RE = re.compile(r"[A-Z0-9]{8,}")
-"""§4.6 tier 1's own token shape: an alphanumeric run of length >= 8.
+"""The matcher's own tier-1 token shape: an alphanumeric run of length >= 8.
 
 Restricted below to tokens containing a digit, which a party name (letters
 and spaces only) never does — a real UTR/reference always does. Without
@@ -87,16 +86,16 @@ class CaseKind(StrEnum):
 
 
 class Case(BaseModel):
-    """One assembled reconciliation case (§1.2), before matching or classification.
+    """One assembled reconciliation case, before matching or classification.
 
     `settlement`/`recon_lines` are populated for `SETTLEMENT_ANCHORED`
     cases and empty for `ORPHAN` cases; `bank_lines` is the reverse at
-    construction time. No case carries both — §1.2's two anchor kinds are
+    construction time. No case carries both — the two anchor kinds are
     exclusive.
 
     `match_tier`/`residual_paise`/`in_settlement_window` are unset
-    (`None`) as assembled here — they are `pipeline/matcher.py`'s job
-    (component 3, session 3.3), which returns a `model_copy` of a
+    (`None`) as assembled here — they are `pipeline/matcher.py`'s job,
+    which returns a `model_copy` of a
     settlement-anchored `Case` with these filled in and its `bank_lines`
     populated with the matched credit(s), if any. Orphan cases are already
     evidence-complete from assembly and the matcher passes them through
@@ -111,16 +110,16 @@ class Case(BaseModel):
     recon_lines: tuple[ReconLine, ...] = ()
     bank_lines: tuple[BankLine, ...] = ()
     match_tier: int | None = None
-    """The winning FR-09 tier (0-3, §4.6), settlement-anchored cases only."""
+    """The winning matcher tier (0-3), settlement-anchored cases only."""
     residual_paise: int | None = None
-    """`settlement.amount` minus matched `deposit_paise`, with the §3.3 timing-residual
+    """`settlement.amount` minus matched `deposit_paise`, with the timing-residual
     rule already applied (forced to 0 for a tier-3 match still inside the settlement
     window). Settlement-anchored cases only."""
     in_settlement_window: bool | None = None
     """Set only for a tier-3 (no-match) case: whether `snapshot_date` still falls
-    inside the settlement's T+2 working-day window (§3.3)."""
+    inside the settlement's T+2 working-day window."""
     contested_bank_lines: tuple[BankLine, ...] = ()
-    """Credits this settlement claimed at tier 2 and lost to §4.6's tie rule.
+    """Credits this settlement claimed at tier 2 and lost to the matcher's tie rule.
 
     Separate from `bank_lines` on purpose. A demoted claimant is **not** matched
     to this credit — that is the whole point of the demotion — so putting the
@@ -216,7 +215,7 @@ def is_reversal_shaped(line: BankLine, semantics: NarrationSemantics = KEYWORD) 
     """Whether a withdrawal's narration names itself a reversal/return.
 
     Public because `pipeline/predicates.py` asks the same question when it
-    evaluates §3.3's `REVERSAL_UNMATCHED` trigger. One definition, so the
+    evaluates the `REVERSAL_UNMATCHED` trigger. One definition, so the
     component that decided this line becomes its own case and the
     component that says why cannot disagree about what a reversal is.
     """
@@ -226,7 +225,7 @@ def is_reversal_shaped(line: BankLine, semantics: NarrationSemantics = KEYWORD) 
 def reference_tokens(narration: str) -> set[str]:
     """The digit-bearing alphanumeric runs of length >= 8 in a narration (see `_REFERENCE_TOKEN_RE`).
 
-    Public for the same reason as `is_reversal_shaped`: §3.3's
+    Public for the same reason as `is_reversal_shaped`: the
     `DUPLICATE_CREDIT` trigger ("same UTR credited twice") is a question
     about shared reference tokens, and it must be the same notion of
     "token" that paired the two lines into one case in the first place.
@@ -237,7 +236,7 @@ def reference_tokens(narration: str) -> set[str]:
 def _find_duplicate_credit_pairs(
     credit_lines: Sequence[BankLine],
 ) -> tuple[list[tuple[BankLine, BankLine]], set[str]]:
-    """REV-18: two credits sharing narration, amount and value date are one case, not two."""
+    """Two credits sharing narration, amount and value date are one case, not two."""
     groups: dict[tuple[str, int, object], list[BankLine]] = defaultdict(list)
     for line in credit_lines:
         groups[(line.narration, int(line.deposit_paise), line.value_date)].append(line)

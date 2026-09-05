@@ -1,7 +1,7 @@
-"""Session 4.1 checkpoint (spec.md §6.3): "No `(case_id, entity_id)` fires two
-predicates" — REV-16's mutual-exclusivity assertion — plus targeted unit
-coverage of each of the six §3.4 evidence predicates and each deterministic
-§3.3 `OPERATIONAL_EXCEPTION` subtype trigger in `pipeline/predicates.py`.
+"""The checkpoint: no `(case_id, entity_id)` fires two predicates — a
+mutual-exclusivity assertion — plus targeted unit coverage of each of the six
+evidence predicates and each deterministic `OPERATIONAL_EXCEPTION` subtype
+trigger in `pipeline/predicates.py`.
 """
 
 from __future__ import annotations
@@ -213,7 +213,7 @@ def test_t01_fires_when_fee_unposted_and_revenue_booked_at_gross():
 
 def test_t01_does_not_fire_when_the_fee_was_posted():
     """A correctly-booked payment credits revenue at gross too — the `Payment Gateway
-    Charges` conjunct is the only thing keeping it out of T-01 (REV-16)."""
+    Charges` conjunct is the only thing keeping it out of T-01."""
     payment = _payment()
     entries = [
         _entry("je_1", ACCOUNT_RAZORPAY_CLEARING, reference=payment.entity_id, debit=NET),
@@ -321,7 +321,7 @@ def test_t04_fires_on_a_premature_bank_debit_with_no_matching_credit():
 
 
 def test_t04_does_not_fire_once_the_bank_credit_has_landed():
-    """REV-15's hard precondition: with the credit landed this is a date error, not an
+    """A hard precondition: with the credit landed this is a date error, not an
     account error, and posting T-04 would create a reconciliation break."""
     payment = _payment()
     case = _case((payment,), match_tier=int(MatchTier.UTR_EXACT))
@@ -394,13 +394,14 @@ def test_t05_and_t06_do_not_fire_once_the_adjustment_is_posted():
     assert _fired(_case((adjustment,)), entries) == set()
 
 
-# --- REV-16: a double fire is a hard error, raised in production code. ---
+# --- A double fire is a hard error, raised in production code. ---
 
 
 def test_two_predicates_firing_on_one_entity_raises():
     """T-01 and T-03 are separated by one number. Give a payment both a gross and a
-    net `Sales Revenue` credit and no fee posting, and both fire — REV-16's exact
-    failure mode, since both instantiations balance and post to different accounts."""
+    net `Sales Revenue` credit and no fee posting, and both fire — the exact
+    failure mode this guards against, since both instantiations balance and post
+    to different accounts."""
     payment = _payment()
     entries = [
         _entry("je_1", ACCOUNT_SALES_REVENUE, reference=payment.entity_id, credit=GROSS),
@@ -420,7 +421,7 @@ def test_an_unmatched_case_is_rejected_rather_than_evaluated():
         _evaluate(_case((_payment(),), match_tier=None), [])
 
 
-# --- §3.3 OPERATIONAL_EXCEPTION subtype triggers. ---
+# --- OPERATIONAL_EXCEPTION subtype triggers. ---
 
 
 def test_settlement_utr_missing_triggers_on_a_processed_settlement_with_no_utr():
@@ -510,7 +511,7 @@ def test_reversal_unmatched_triggers_on_a_lone_reversal_shaped_withdrawal():
 
 
 def test_unmatched_inbound_credit_is_never_triggered_deterministically():
-    """§4.2 puts "does this narration identify a counterparty?" in Slot A, the one
+    """Whether a narration identifies a counterparty belongs to Slot A, the one
     graded LLM slot. Component 4 must leave that question open, not pre-answer it."""
     case = _orphan(_bank_line("bank_1", narration="NEFT CR ACME TRADING PVT LTD HDFC0001202608280009", deposit=500_00))
 
@@ -535,7 +536,7 @@ def _expected_subtype_lookup(batch):
     (`case_id == settlement.id`, every population's own convention). Orphan
     cases do not: `pipeline/case_assembly.py` mints its own `case_orphan_*`
     id from the bank line, while the generator minted an unrelated
-    `orphan_*` id. The two are joined the way §1.6 intends — through
+    `orphan_*` id. The two are joined through
     `expected_linked_source_records`, which for an orphan case is exactly
     its `bank_line.line_id`s. Reconciling the two id spaces properly is the
     reporter's job (component 9); this is only enough of it to look up a
@@ -552,7 +553,7 @@ def _expected_subtype_lookup(batch):
 
 
 def test_no_case_entity_pair_fires_two_predicates():
-    """The session 4.1 checkpoint (§6.3), REV-16.
+    """The checkpoint.
 
     `evaluate_cases` raises `PredicateOverlapError` on a double fire, so
     completing at all is half the assertion; the explicit count below is
@@ -566,21 +567,21 @@ def test_no_case_entity_pair_fires_two_predicates():
             (hit.case_id, hit.entity_id) for evidence in evidences for hit in evidence.template_hits
         )
         double_fires = {pair: count for pair, count in pair_counts.items() if count > 1}
-        assert not double_fires, f"seed={seed}: REV-16 violation on {double_fires}"
+        assert not double_fires, f"seed={seed}: double predicate fire on {double_fires}"
         assert pair_counts, f"seed={seed}: no predicate fired at all"
 
 
 def test_every_template_predicate_fires_and_agrees_with_ground_truth():
-    """All six §3.4 templates are exercised, and the templates that fire on a case are
+    """All six templates are exercised, and the templates that fire on a case are
     exactly the ones ground truth expects — with one documented exception.
 
-    The 12 FR-06 tax cases are structurally identical unposted adjustments
+    The 12 policy-excluded tax cases are structurally identical unposted adjustments
     (`generator/exceptions.py` builds them with family 5's own
     `build_adjustment_line`), so `T-05`/`T-06` fire on them. What separates
-    the two populations is §2.5's policy exclusion, which §4.2 puts in Slot
-    C and explicitly defers — not the evidence predicate. Asserting the
+    the two populations is a policy exclusion, which a later component
+    explicitly defers — not the evidence predicate. Asserting the
     exception by name keeps it a known, bounded difference rather than
-    something a later session discovers as drift.
+    something discovered later as drift.
     """
     batch, evidences = _evaluated_reference_batch(0)
 
@@ -606,12 +607,12 @@ def test_every_template_predicate_fires_and_agrees_with_ground_truth():
 
 
 def test_deterministic_subtype_triggers_agree_with_ground_truth():
-    """Each deterministically-decidable §3.3 trigger fires on exactly its own population.
+    """Each deterministically-decidable trigger fires on exactly its own population.
 
-    `BANK_CREDIT_OVERDUE` is deliberately a superset: its §3.3 trigger
+    `BANK_CREDIT_OVERDUE` is deliberately a superset: its trigger
     ("settlement window has elapsed with no matching bank credit") is
     literally true of family-4 core cases too. That is not a defect — it is
-    why §4.1 splits evaluation from classification. The assertion that
+    why evaluation is split from classification. The assertion that
     matters is that every extra case also carries a template hit, so the
     classifier (component 5) has the evidence to prefer
     `ACCOUNTING_CORRECTION` over `OPERATIONAL_EXCEPTION` rather than

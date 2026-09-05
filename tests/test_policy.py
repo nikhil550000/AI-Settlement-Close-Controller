@@ -1,4 +1,4 @@
-"""§2.5's policy exclusions — FR-06's tax positions and REV-11's date-only reclassification.
+"""The policy exclusions' policy exclusions — the policy exclusions' tax positions and a revision's date-only reclassification.
 
 Both gates decline entries that are *valid*: they balance, they cite real
 records, and applying them would drive the residual to 0. So the tests
@@ -7,7 +7,7 @@ excluded — because a gate that over-fires silently converts correct
 auto-closes into declines and `auto_close_recall` is the only place it
 would show.
 
-The batch-level test is the real assertion: exactly the 12 FR-06 cases
+The batch-level test is the real assertion: exactly the 12 the policy exclusions cases
 fire `TAX_POSITION`, exactly the 5 family-4 date-error cases fire
 `DATE_ONLY_RECLASSIFICATION`, and no other case in the batch fires
 either.
@@ -122,12 +122,12 @@ def _no_evidence() -> CaseEvidence:
     return CaseEvidence(case_id="setl_1")
 
 
-# --- FR-06: tax positions. ---
+# --- the policy exclusions: tax positions. ---
 
 
 @pytest.mark.parametrize("signature", TAX_SIGNATURES)
 def test_each_generator_tax_signature_is_detected(signature: str) -> None:
-    """The two §2.5 exclusions as the generator writes them, checked against a
+    """The two the policy exclusions as the generator writes them, checked against a
     keyword set chosen from the tax domain rather than copied from that pool."""
     line = _recon_line(
         entity_id="adj_1", type=RazorpayEntityType.ADJUSTMENT, debit=5_000, credit=0, description=signature
@@ -144,7 +144,7 @@ def test_each_generator_tax_signature_is_detected(signature: str) -> None:
     ["Settlement adjustment", "On-hold balance release", "Reserve balance adjustment", None],
 )
 def test_a_neutral_adjustment_description_is_not_a_tax_position(description: str | None) -> None:
-    """Family 5's adjustments must stay on the auto path — §3.5 gives them a
+    """Family 5's adjustments must stay on the auto path — the generator plan gives them a
     description precisely so the field's *presence* is not the tell."""
     line = _recon_line(
         entity_id="adj_1", type=RazorpayEntityType.ADJUSTMENT, debit=5_000, credit=0, description=description
@@ -154,13 +154,13 @@ def test_a_neutral_adjustment_description_is_not_a_tax_position(description: str
 
 
 def test_a_tax_signature_on_a_non_adjustment_line_is_ignored() -> None:
-    """§4.2 fixes the detection surface as the *adjustment* line specifically."""
+    """The model-slot boundary fixes the detection surface as the *adjustment* line specifically."""
     line = _recon_line(description="TDS deduction under Section 194-O (e-commerce operator)")
 
     assert evaluate_policy(_case((line,)), _no_evidence(), {}) == ()
 
 
-# --- REV-11: date-only reclassification. ---
+# --- a later revision: date-only reclassification. ---
 
 
 def test_a_month_crossing_posting_on_a_banked_settlement_is_excluded() -> None:
@@ -180,10 +180,10 @@ def test_a_posting_in_the_capture_month_is_not_excluded() -> None:
 
 
 def test_an_unmatched_settlement_is_not_excluded() -> None:
-    """§2.5's conjunct: "where the settlement has **already credited the bank**".
+    """The policy exclusions' conjunct: "where the settlement has **already credited the bank**".
 
     With no credit landed, this is family 4's own territory — an account
-    error to auto-close, not a period question — and REV-15 says so
+    error to auto-close, not a period question — and a later revision says so
     explicitly.
     """
     line = _recon_line()
@@ -195,7 +195,7 @@ def test_an_unmatched_settlement_is_not_excluded() -> None:
 
 
 def test_a_case_with_a_firing_template_is_not_excluded() -> None:
-    """§2.5's conjunct: "posted to the **correct accounts** on the wrong date".
+    """The policy exclusions' conjunct: "posted to the **correct accounts** on the wrong date".
 
     A firing predicate means the accounts or amounts are wrong and a
     template restores them. This is the conjunct that stops the exclusion
@@ -236,7 +236,7 @@ def test_a_case_touching_neither_gate_is_left_on_the_auto_path() -> None:
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3])
 def test_exactly_the_two_policy_populations_are_excluded(seed: int) -> None:
-    """§3.5's table: 12 FR-06 tax positions and 5 family-4 date-error cases,
+    """The generator plan's table: 12 the policy exclusions tax positions and 5 family-4 date-error cases,
     both `REVIEW_REQUIRED`/`policy`, and 17 `REVIEW_REQUIRED` cases in total."""
     batch = generate_reference_batch(random.Random(seed), SNAPSHOT)
     cases = match_cases(
@@ -268,7 +268,7 @@ def test_exactly_the_two_policy_populations_are_excluded(seed: int) -> None:
 
 
 def test_no_auto_closable_family_case_is_policy_excluded() -> None:
-    """The five FR-04 families must reach the auto path untouched — an
+    """The five the anomaly families families must reach the auto path untouched — an
     over-firing gate would show up only as depressed `auto_close_recall`."""
     batch = generate_reference_batch(random.Random(0), SNAPSHOT)
     cases = match_cases(
@@ -285,4 +285,4 @@ def test_no_auto_closable_family_case_is_policy_excluded() -> None:
         if batch.population_of.get(case.case_id) not in families:
             continue
         assert case.case_id in candidates, f"{case.case_id} lost its candidate"
-        assert evaluate_policy(case, evidences[case.case_id], index) == (), case.case_id
+        assert evaluate_policy(case, evidences[case.case_id], index) == () , case.case_id

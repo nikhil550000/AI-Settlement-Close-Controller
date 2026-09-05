@@ -1,6 +1,6 @@
-"""Session 2.2: the T+2 working-day settlement-window rule (spec.md §3.3).
+""": the T+2 working-day settlement-window rule.
 
-Relocated to `pipeline/timing.py` in session 3.3 so `pipeline/matcher.py`
+Relocated to `pipeline/timing.py` in so `pipeline/matcher.py`
 can import it without violating the generator/pipeline import guard.
 """
 

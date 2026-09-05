@@ -1,29 +1,27 @@
-"""The predicate evaluator, per spec.md §4.1 component 4.
+"""The predicate evaluator: the six evidence predicates plus the
+`OPERATIONAL_EXCEPTION` subtype triggers.
 
-> **Predicate evaluator.** The six §3.4 evidence predicates plus the
-> `OPERATIONAL_EXCEPTION` subtype triggers (§3.3).
-
-Runs **downstream of the matcher** (component 3): `T-04`'s second conjunct
-and the `BANK_CREDIT_OVERDUE` trigger are both statements about whether a
-bank credit matched, which is `pipeline/matcher.py`'s answer, not a fact
-this module re-derives. A settlement-anchored `Case` whose `match_tier` is
+Runs **downstream of the matcher**: `T-04`'s second conjunct and the
+`BANK_CREDIT_OVERDUE` trigger are both statements about whether a bank
+credit matched, which is `pipeline/matcher.py`'s answer, not a fact this
+module re-derives. A settlement-anchored `Case` whose `match_tier` is
 still `None` is rejected rather than evaluated.
 
-**This module reports evidence facts; it does not assign labels.** §4.1
-splits those jobs across two components — 4 evaluates, 5 (the classifier)
-assigns an exception class and subtype. The distinction has teeth:
-§3.3's `BANK_CREDIT_OVERDUE` trigger ("settlement window has elapsed with
-no matching bank credit") is *literally true* of every family-4 core case,
-which is an `ACCOUNTING_CORRECTION`, not an `OPERATIONAL_EXCEPTION` —
-those cases also fire `T-04`, and the precedence rule that resolves the
-two is the classifier's to state. Reporting only the facts here keeps that
-rule visible in one place instead of half-buried in a trigger.
+**This module reports evidence facts; it does not assign labels.**
+Evaluating and assigning are two separate jobs — this module evaluates,
+the classifier assigns an exception class and subtype. The distinction
+has teeth: the `BANK_CREDIT_OVERDUE` trigger ("settlement window has
+elapsed with no matching bank credit") is *literally true* of every
+family-4 core case, which is an `ACCOUNTING_CORRECTION`, not an
+`OPERATIONAL_EXCEPTION` — those cases also fire `T-04`, and the
+precedence rule that resolves the two is the classifier's to state.
+Reporting only the facts here keeps that rule visible in one place
+instead of half-buried in a trigger.
 
-## The six evidence predicates (§3.4)
+## The six evidence predicates
 
 Each is evaluated per `(case, recon_line)` pair, against the ledger
-entries whose `reference` names that recon line's `entity_id` — the join
-session 3.2 deliberately deferred to "the point it needs them" rather than
+entries whose `reference` names that recon line's `entity_id` — the join deliberately deferred to "the point it needs them" rather than
 pre-attaching in case assembly.
 
 | Template | Predicate |
@@ -35,17 +33,17 @@ pre-attaching in case assembly.
 | `T-05` | settled `adjustment` with `credit > 0`, **no** `Razorpay Settlement Adjustments` entry |
 | `T-06` | settled `adjustment` with `debit > 0`, **no** `Razorpay Settlement Adjustments` entry |
 
-**REV-16's mutual-exclusivity rule is enforced here, in production code,
-not only in the test.** "The pipeline MUST assert at instantiation time
-that at most one template predicate fires per `(case_id, entity_id)`; a
-double fire is a hard error, not a resolved-by-precedence situation."
+**The mutual-exclusivity rule is enforced here, in production code, not
+only in the test.** The pipeline must assert at instantiation time that
+at most one template predicate fires per `(case_id, entity_id)`; a double
+fire is a hard error, not a resolved-by-precedence situation.
 `evaluate_case` therefore evaluates all six and raises
 `PredicateOverlapError` if two fire on one entity — the two templates post
 to different credit accounts and both instantiations balance, so a wrong
-selection would sail through §1.7.5's debit-equals-credit check and
-surface only as a non-zero post-adjustment residual.
+selection would sail through the debit-equals-credit check and surface
+only as a non-zero post-adjustment residual.
 
-`T-01` versus `T-03` is the pair REV-16 was written for, and the thing
+`T-01` versus `T-03` is the pair this rule was written for, and the thing
 that separates them is arithmetic on one number: with `fee > 0`, gross
 `amount` and net `amount - fee - tax` cannot be equal, so at most one of
 the two `Sales Revenue` conjuncts can hold. `T-01`'s extra "no `Payment
@@ -55,28 +53,27 @@ fee) out of `T-01` altogether.
 
 ## What is deliberately not evaluated here
 
-- **`UNMATCHED_INBOUND_CREDIT`.** §3.3's trigger is "bank credit with an
-  identifiable counterparty but no Razorpay anchor," and §4.2 assigns
-  precisely that judgment to the model: "`UNMATCHED_INBOUND_CREDIT` versus
+- **`UNMATCHED_INBOUND_CREDIT`.** The trigger is "bank credit with an
+  identifiable counterparty but no Razorpay anchor," and that judgment is
+  assigned precisely to the model: `UNMATCHED_INBOUND_CREDIT` versus
   `AMBIGUOUS_CASE` on an orphan bank credit turns entirely on whether the
-  free-text narration identifies a counterparty... and no residual
-  computation decides it." The "no Razorpay anchor" half is already
+  free-text narration identifies a counterparty, and no residual
+  computation decides it. The "no Razorpay anchor" half is already
   settled — such a case exists only because case assembly found no
   settlement anchor for the line. Emitting a deterministic
-  counterparty-detector here would both pre-empt session 5.1's
+  counterparty-detector here would both pre-empt
   keyword baseline and put a second, competing answer in front of the one
   graded LLM slot.
-- **FR-06 policy-exclusion detection (194-O, ITC eligibility).** §4.2 Slot
-  C, explicitly "**Deferred:** this is decidable better after the first
-  run than now." The consequence is visible and expected: the 12 FR-06 tax
-  cases are structurally identical unposted adjustments, so `T-05`/`T-06`
-  fire on them exactly as they fire on family 5. What separates the two
+- **Policy-exclusion detection (194-O, ITC eligibility tax cases).**
+  Explicitly deferred: this is decidable better after the first run than
+  now. The consequence is visible and expected: the 12 tax cases are
+  structurally identical unposted adjustments, so `T-05`/`T-06` fire on
+  them exactly as they fire on family 5. What separates the two
   populations is the policy gate, not the evidence predicate, and the gate
-  is not this component's.
-- **Amount derivation.** §3.4's "Amount source" column is the
-  instantiator's contract (component 6, session 4.2). A hit cites the
-  records a downstream instantiation must read; it does not compute the
-  entry.
+  is not this module's.
+- **Amount derivation.** The "amount source" for each template is the
+  instantiator's contract. A hit cites the records a
+  downstream instantiation must read; it does not compute the entry.
 """
 
 from __future__ import annotations
@@ -102,14 +99,14 @@ from pipeline.matcher import MatchTier
 from pipeline.schemas import LedgerEntry, RazorpayEntityType, ReconLine, Settlement, SettlementStatus
 from pipeline.timing import settlement_window_deadline
 
-# `ExceptionSubtype` above is §3.3's taxonomy vocabulary, not a ground-truth
-# label: it happens to be declared in `pipeline/ground_truth.py` (session 1.2)
-# because that is where the §1.6 schema needed it first. Importing the enum
+# `ExceptionSubtype` above is the taxonomy vocabulary, not a ground-truth
+# label: it happens to be declared in `pipeline/ground_truth.py`
+# because that is where the metrics schema needed it first. Importing the enum
 # reads no case's ground truth and creates no dependency on the generator.
 
 
 class TemplateId(StrEnum):
-    """§3.4's six accounting templates, by ID."""
+    """The six accounting templates, by ID."""
 
     T01 = "T-01"
     T02 = "T-02"
@@ -120,12 +117,12 @@ class TemplateId(StrEnum):
 
 
 class PredicateOverlapError(Exception):
-    """REV-16: two template predicates fired on one `(case_id, entity_id)`.
+    """Two template predicates fired on one `(case_id, entity_id)`.
 
     A hard error by design. The templates that can collide post to
-    different credit accounts, and both instantiations balance, so
-    §1.7.5's balance check would pass a wrong selection — there is no safe
-    precedence rule to fall back on.
+    different credit accounts, and both instantiations balance, so the
+    debit-equals-credit balance check would pass a wrong selection —
+    there is no safe precedence rule to fall back on.
     """
 
 
@@ -138,7 +135,7 @@ class PredicateHit(BaseModel):
     entity_id: str
     template_id: TemplateId
     cited_record_ids: tuple[str, ...]
-    """Exactly the records the predicate read (§1.7.3), and nothing else.
+    """Exactly the records the predicate read, and nothing else.
 
     Positive conjuncts cite an ID; a negative conjunct ("no `Payment
     Gateway Charges` entry references this payment") has no record to
@@ -148,12 +145,12 @@ class PredicateHit(BaseModel):
 
 
 class SubtypeTrigger(BaseModel):
-    """One §3.3 `OPERATIONAL_EXCEPTION` subtype trigger, satisfied by a case's evidence.
+    """One `OPERATIONAL_EXCEPTION` subtype trigger, satisfied by a case's evidence.
 
     A fired trigger is a fact about the evidence, not an assigned label —
     more than one can fire on a case, and a case that fires
     `BANK_CREDIT_OVERDUE` may still be an `ACCOUNTING_CORRECTION`. The
-    classifier (component 5) resolves that.
+    classifier resolves that.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -164,7 +161,7 @@ class SubtypeTrigger(BaseModel):
 
 
 class CaseEvidence(BaseModel):
-    """Everything component 4 has to say about one case."""
+    """Everything the predicate evaluator has to say about one case."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -174,7 +171,7 @@ class CaseEvidence(BaseModel):
 
 
 LedgerIndex = Mapping[str, tuple[LedgerEntry, ...]]
-"""Ledger entries grouped by `reference`, the `ledger_entry` -> `recon_line` join key (§3.1)."""
+"""Ledger entries grouped by `reference`, the `ledger_entry` -> `recon_line` join key."""
 
 
 def index_ledger_entries(entries: Sequence[LedgerEntry]) -> dict[str, tuple[LedgerEntry, ...]]:
@@ -220,10 +217,10 @@ def _capture_date(recon_line: ReconLine) -> date:
 
 
 def _is_dated_at_or_near_capture(entry_date: date, capture_date: date) -> bool:
-    """§3.4's `T-04` conjunct: the `Bank Account` debit is "dated at or near capture".
+    """`T-04`'s conjunct: the `Bank Account` debit is "dated at or near capture".
 
-    "Near" is bounded by the only timing notion the spec defines — §3.3's
-    T+2 working-day settlement window. A bank debit dated inside that
+    "Near" is bounded by the only timing notion defined for this system —
+    the T+2 working-day settlement window. A bank debit dated inside that
     window is booked while the cash demonstrably could not have arrived
     yet (the family's whole premise: a *premature* bank debit); one dated
     past the window is dated at settlement time, not at capture, and the
@@ -240,11 +237,12 @@ def _is_dated_at_or_near_capture(entry_date: date, capture_date: date) -> bool:
     return capture_date <= entry_date <= settlement_window_deadline(capture_date)
 
 
-# --- The six §3.4 evidence predicates. ---
+# --- The six evidence predicates. ---
 #
 # Each returns the record IDs it cited if it fires, or None if it does not.
 # One shape for all six so `evaluate_case` can run them as a table and count
-# the fires — REV-16's assertion is then structural rather than bolted on.
+# the fires — the mutual-exclusivity assertion is then structural rather than
+# bolted on.
 
 
 def _predicate_t01(case: Case, line: ReconLine, entries: Sequence[LedgerEntry]) -> tuple[str, ...] | None:
@@ -279,10 +277,10 @@ def _predicate_t03(case: Case, line: ReconLine, entries: Sequence[LedgerEntry]) 
 def _predicate_t04(case: Case, line: ReconLine, entries: Sequence[LedgerEntry]) -> tuple[str, ...] | None:
     if line.type is not RazorpayEntityType.PAYMENT:
         return None
-    # REV-15's hard precondition, read off the matcher: family 4 applies
-    # "only where no bank credit matching the settlement exists in
-    # `bank_line` as of the batch snapshot". Tiers 0-2 are exactly §3.4's
-    # "matching the settlement UTR or net amount"; tier 3 is their absence.
+    # A hard precondition, read off the matcher: family 4 applies only
+    # where no bank credit matching the settlement exists in `bank_line`
+    # as of the batch snapshot. Tiers 0-2 are exactly "matching the
+    # settlement UTR or net amount"; tier 3 is their absence.
     if case.match_tier != int(MatchTier.NO_MATCH):
         return None
     bank_debit = _debit_entry_for_account(entries, ACCOUNT_BANK_ACCOUNT)
@@ -318,21 +316,21 @@ EVIDENCE_PREDICATES = (
     (TemplateId.T05, _predicate_t05),
     (TemplateId.T06, _predicate_t06),
 )
-"""§3.4's six evidence predicates, in template order. Every one is evaluated on
+"""The six evidence predicates, in template order. Every one is evaluated on
 every recon line — none is skipped once another has fired, because skipping is
-what would hide the double fire REV-16 requires be raised as a hard error."""
+what would hide a double fire that must be raised as a hard error."""
 
 
-# --- §3.3's `OPERATIONAL_EXCEPTION` subtype triggers. ---
+# --- The `OPERATIONAL_EXCEPTION` subtype triggers. ---
 
 
 def _settlement_amount_paise_from_recon_lines(recon_lines: Sequence[ReconLine]) -> int:
-    """§3.3's `SETTLEMENT_AMOUNT_MISMATCH` right-hand side, and §3.5's generator invariant.
+    """The `SETTLEMENT_AMOUNT_MISMATCH` right-hand side, and the generator's own invariant.
 
     > `settlement.amount == sum(credits) - sum(debits) - fees - tax`
 
     Fees and tax come from the recon lines themselves, not from the
-    settlement header's own `fees`/`tax` fields — §3.3's trigger compares
+    settlement header's own `fees`/`tax` fields — the trigger compares
     the header against "the sum of **its recon lines** net of fees and
     tax", so reading the header on both sides would compare a record to
     itself.
@@ -344,7 +342,7 @@ def _settlement_anchored_triggers(case: Case, settlement: Settlement) -> list[Su
     triggers: list[SubtypeTrigger] = []
 
     # SETTLEMENT_UTR_MISSING: "Settlement is `processed` but carries no UTR,
-    # so no bank-side anchor exists." §3.1 types `utr` as a plain, non-nullable
+    # so no bank-side anchor exists." `utr` is typed as a plain, non-nullable
     # string, so "no UTR" is the empty value within that type.
     if settlement.status is SettlementStatus.PROCESSED and not settlement.utr.strip():
         triggers.append(
@@ -357,7 +355,7 @@ def _settlement_anchored_triggers(case: Case, settlement: Settlement) -> list[Su
 
     # BANK_CREDIT_OVERDUE: "Settlement window has elapsed with no matching
     # bank credit." Both halves are the matcher's output, already carrying
-    # §3.3's timing-residual rule.
+    # the timing-residual rule.
     if case.match_tier == int(MatchTier.NO_MATCH) and case.in_settlement_window is False:
         triggers.append(
             SubtypeTrigger(
@@ -378,12 +376,11 @@ def _settlement_anchored_triggers(case: Case, settlement: Settlement) -> list[Su
             )
         )
 
-    # DISPUTE_PENDING: §3.3 names this "a seventh subtype attached to the FR-05
-    # chargeback population" without restating a trigger row for it. §3.1 gives
-    # the evidence directly — `dispute_id` is the recon line's "FK -> dispute
-    # (FR-05 stretch only)" — so a populated `dispute_id` is the trigger. The
-    # dispute entity itself is not generated in v1 (FR-05 is a stretch item),
-    # so the citation is the disputed recon line, not the dispute.
+    # DISPUTE_PENDING: a seventh subtype attached to the chargeback
+    # population. `dispute_id` is the recon line's foreign key to a dispute
+    # (a stretch-goal entity), so a populated `dispute_id` is the trigger.
+    # The dispute entity itself is not generated in v1, so the citation is
+    # the disputed recon line, not the dispute.
     disputed = tuple(line.entity_id for line in case.recon_lines if line.dispute_id is not None)
     if disputed:
         triggers.append(
@@ -398,10 +395,10 @@ def _settlement_anchored_triggers(case: Case, settlement: Settlement) -> list[Su
 
 
 def _orphan_triggers(case: Case, semantics: NarrationSemantics = KEYWORD) -> list[SubtypeTrigger]:
-    """§3.3's two structurally-decidable orphan triggers.
+    """The two structurally-decidable orphan triggers.
 
-    The third orphan subtype, `UNMATCHED_INBOUND_CREDIT`, is Slot A's
-    (§4.2) — see this module's docstring.
+    The third orphan subtype, `UNMATCHED_INBOUND_CREDIT`, is Slot A's —
+    see this module's docstring.
 
     `REVERSAL_UNMATCHED`'s "no matching prior credit in the batch" half is
     not re-derived here: `pipeline/case_assembly.py` already answered it
@@ -416,8 +413,9 @@ def _orphan_triggers(case: Case, semantics: NarrationSemantics = KEYWORD) -> lis
     deposits = [line for line in case.bank_lines if int(line.deposit_paise) > 0]
 
     # DUPLICATE_CREDIT: "Same UTR credited twice on the bank statement."
-    # REV-18 makes the pair one case, so the duplicate is visible inside the
-    # case: two deposit lines whose narrations carry a common reference token.
+    # The duplicated pair is grouped into one case, so the duplicate is
+    # visible inside the case: two deposit lines whose narrations carry a
+    # common reference token.
     if len(deposits) >= 2:
         token_counts: dict[str, int] = {}
         for line in deposits:
@@ -453,11 +451,11 @@ def _orphan_triggers(case: Case, semantics: NarrationSemantics = KEYWORD) -> lis
 def evaluate_case(
     case: Case, ledger_index: LedgerIndex, semantics: NarrationSemantics = KEYWORD
 ) -> CaseEvidence:
-    """Evaluate every §3.4 predicate and every §3.3 subtype trigger against one case.
+    """Evaluate every template predicate and every subtype trigger against one case.
 
     Raises `PredicateOverlapError` if two template predicates fire on the
-    same `(case_id, entity_id)` — REV-16's hard error, asserted in
-    production code rather than left to the test suite.
+    same `(case_id, entity_id)` — a hard error, asserted in production
+    code rather than left to the test suite.
     """
     if case.kind is CaseKind.ORPHAN:
         return CaseEvidence(case_id=case.case_id, subtype_triggers=tuple(_orphan_triggers(case, semantics)))
@@ -482,7 +480,7 @@ def evaluate_case(
         ]
         if len(fired) > 1:
             raise PredicateOverlapError(
-                f"REV-16 violation: {len(fired)} template predicates fired on "
+                f"{len(fired)} template predicates fired on "
                 f"(case_id={case.case_id!r}, entity_id={line.entity_id!r}): "
                 f"{[str(template_id) for template_id, _ in fired]}"
             )
@@ -511,7 +509,7 @@ def evaluate_cases(
 ) -> list[CaseEvidence]:
     """Evaluate every case in the batch. Cases must already carry the matcher's output.
 
-    `semantics` answers the one free-text question a trigger asks — §3.3's
+    `semantics` answers the one free-text question a trigger asks — the
     `REVERSAL_UNMATCHED` read, which must be the same notion of "reversal"
     `pipeline.case_assembly` used to raise the case, or the component that
     grouped the line and the component that says why would disagree.
@@ -521,7 +519,7 @@ def evaluate_cases(
 
 
 def template_hit_distribution(evidences: Sequence[CaseEvidence]) -> dict[str, int]:
-    """Count of firing predicates per template ID — §3.4's six, as exercised by a batch."""
+    """Count of firing predicates per template ID — the six templates, as exercised by a batch."""
     counts: dict[str, int] = {}
     for evidence in evidences:
         for hit in evidence.template_hits:
@@ -530,7 +528,7 @@ def template_hit_distribution(evidences: Sequence[CaseEvidence]) -> dict[str, in
 
 
 def subtype_trigger_distribution(evidences: Sequence[CaseEvidence]) -> dict[str, int]:
-    """Count of firing triggers per `OPERATIONAL_EXCEPTION` subtype (§3.3)."""
+    """Count of firing triggers per `OPERATIONAL_EXCEPTION` subtype."""
     counts: dict[str, int] = {}
     for evidence in evidences:
         for trigger in evidence.subtype_triggers:

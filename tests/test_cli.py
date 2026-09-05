@@ -1,13 +1,12 @@
-"""Session 7.2's FR-10 checkpoint: the CLI `pipeline/cli.py` builds.
+"""CLI checkpoint: the CLI `pipeline/cli.py` builds.
 
-Never built until this session — `pipeline/run.py`'s own docstring since
-session 4.3 has said "FR-10's CLI surface, built in a later session, calls
+Never built until this session — `pipeline/run.py`'s own docstring since has said "the CLI surface, built in a later session, calls
 this rather than re-deriving the wiring." This module is that later
-session, and its own checkpoint is narrower than the Phase 7 checkpoint
+session, and its own checkpoint is narrower than Phase 7 checkpoint
 (`tests/test_reproduce.py` owns the byte-identical clean-clone claim): only
 that the command runs end to end against the committed reference dataset,
 touches no network under the default `--llm-cache=strict`, emits both a
-console summary and a report file (FR-10's own words), and that
+console summary and a report file (the requirement's own words), and that
 `RunProvenance` actually gets filled in from the flags a caller passes.
 """
 
@@ -28,17 +27,17 @@ runner = CliRunner()
 
 
 def test_reconcile_runs_offline_end_to_end_and_writes_both_artifacts(tmp_path):
-    """FR-10, verbatim: "A single command runs a batch end to end and emits
+    """The CLI, verbatim: "A single command runs a batch end to end and emits
     both a console summary and a report file." No FIREWORKS_API_KEY needed —
     the default `--llm-cache=strict` never constructs a network path."""
     out_dir = tmp_path / "out"
     result = runner.invoke(app, ["--out-dir", str(out_dir)])
     assert result.exit_code == 0, result.output
 
-    # Console summary: the §5.2 eval-report rendering, on stdout.
+    # Console summary: the confusion matrices eval-report rendering, on stdout.
     assert "eval report" in result.output
     assert "outcome_state" in result.output
-    assert "§5.5 threshold review" in result.output
+    assert "threshold review" in result.output
 
     report_path = out_dir / "report.html"
     metrics_path = out_dir / "metrics.json"
@@ -50,10 +49,10 @@ def test_reconcile_runs_offline_end_to_end_and_writes_both_artifacts(tmp_path):
 
 
 def test_reconcile_baseline_arm_also_runs_offline(tmp_path):
-    """The other of §4.2's two arms — never touches Slot A's model at all,
+    """The other of the model-slot boundary's two arms — never touches Slot A's model at all,
     but Slot B still does (no deterministic fallback exists for it), which
-    is exactly why session 7.1's cache-gap fix (this session) had to cover
-    the `llm` arm specifically rather than the baseline's own, already-cached
+    is exactly why cache-gap fix (this session) had to cover
+    the `llm` arm specifically rather than baseline's own, already-cached
     EXTERNAL_ACTION_REQUIRED/ABSTAINED partition."""
     out_dir = tmp_path / "out"
     result = runner.invoke(app, ["--classifier", "baseline", "--out-dir", str(out_dir)])
@@ -63,7 +62,7 @@ def test_reconcile_baseline_arm_also_runs_offline(tmp_path):
 
 
 def test_two_runs_against_the_committed_data_produce_byte_identical_metrics(tmp_path):
-    """NFR-01's claim, exercised directly rather than only through the
+    """Reproducibility's claim, exercised directly rather than only through the
     heavier clean-clone reproduce test (`tests/test_reproduce.py`)."""
     out_a = tmp_path / "a"
     out_b = tmp_path / "b"
@@ -76,8 +75,8 @@ def test_two_runs_against_the_committed_data_produce_byte_identical_metrics(tmp_
 
 def test_run_reconciliation_fills_in_provenance_from_the_flags_it_is_given():
     """`pipeline.metrics.RunProvenance`'s own docstring: every field is
-    caller-supplied and defaults to `None` because "session 7.2 owns the
-    FR-13 pin." This is that wiring — every field must come from what the
+    caller-supplied and defaults to `None` because " owns the
+    the pin." This is that wiring — every field must come from what the
     caller (the CLI, or the reproduce test) passed in, never derived."""
     eval_report, _html = run_reconciliation(
         data_dir=DATA_DIR,

@@ -1,10 +1,10 @@
-# FR-08 ICICI-shape column map (spec.md §2.6).
+# ICICI-shape column map.
 # "serial number column, separate value/transaction dates, Transaction
 # Remarks, withdrawal/deposit amount columns" — no cheque/reference-number
 # column is named for this profile, so `ref_no_column` is deliberately
 # null: a real ICICI export gives the matcher no secondary anchor,
-# exactly the "no clean join" premise FR-09 exists to handle.
-# `DD-MM-YYYY` is the second of the two date formats FR-08 names explicitly.
+# exactly the "no clean join" premise the match cascade exists to handle.
+# `DD-MM-YYYY` is the second of the two date formats the profile schema names explicitly.
 bank_profile: icici
 date_format: "%d-%m-%Y"
 header: ["S No.", "Value Date", "Transaction Date", "Transaction Remarks", "Withdrawal Amount (INR)", "Deposit Amount (INR)", "Balance (INR)"]

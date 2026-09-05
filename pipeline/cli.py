@@ -1,27 +1,23 @@
-"""`uv run reconcile` — the pipeline's FR-10 CLI entry point.
+"""`uv run reconcile` — the pipeline's CLI entry point.
 
-> **FR-10.** The CLI is the product. A single command runs a batch end to
+> **The CLI is the product.** A single command runs a batch end to
 > end and emits both a console summary and a report file.
 
-Never built until this session (session 7.1's own handoff, and `pipeline/
-run.py`'s module docstring: "FR-10's CLI surface, built in a later
-session, calls this rather than re-deriving the wiring"). It is the thing
-NFR-06's "clean clone reproduces the committed run with a single documented
-command" and the Phase 7 checkpoint both name directly, so it is built here
-rather than assumed.
+It is the thing "a clean clone reproduces the committed run with a single
+documented command" names directly, so it is built here rather than assumed.
 
-**Loads, never generates.** `pipeline/` must never import `generator/`
-(§4.1's import guard), so this command reads an already-generated batch off
+**Loads, never generates.** `pipeline/` must never import `generator/`,
+so this command reads an already-generated batch off
 disk through `pipeline.loaders` — by default the committed reference
-dataset at `data/reference/` (FR-12: "the seeded reference dataset, checked
-in"). `uv run generate --seed <n>` is the separate, `generator`-side command
+dataset at `data/reference/` (the seeded reference dataset, checked
+in). `uv run generate --seed <n>` is the separate, `generator`-side command
 that produces a batch in the first place; this one reconciles whatever
 batch it is pointed at.
 
 **Slot A and Slot B both run through the committed cache in `--llm-cache
-=strict` by default** (§4.3), so the default invocation never touches a
+=strict` by default**, so the default invocation never touches a
 socket and needs no `FIREWORKS_API_KEY` — the same "offline by default"
-behaviour every other NFR-05 checkpoint in this codebase relies on.
+behaviour every other determinism checkpoint in this codebase relies on.
 `--llm-cache=refresh` is the only mode that calls Fireworks, exactly as
 `pipeline.llm_cache.CacheMode` already documents.
 
@@ -29,8 +25,7 @@ behaviour every other NFR-05 checkpoint in this codebase relies on.
 RunProvenance`'s own docstring is explicit about why: "a git SHA read from
 the working tree at metric time would be a different fact from the SHA of
 the committed run." `--git-sha` is therefore a caller-supplied string, left
-`None` unless the caller (a human, or the pin step this session also runs)
-passes one in.
+`None` unless the caller (a human, or a pin step) passes one in.
 """
 
 from __future__ import annotations
@@ -57,12 +52,12 @@ from pipeline.semantics import KEYWORD, LlmSemantics, NarrationSemantics
 from pipeline.storage import connect, fetch_ledger_entries
 
 for _stream in (sys.stdout, sys.stderr):
-    # Windows' default console codepage (cp1252) cannot encode the "§"/"×"/"—"
+    # Windows' default console codepage (cp1252) cannot encode the "×"/"—"
     # characters `pipeline.eval_report`'s plain-text rendering uses, and this is
     # the first place in the codebase that prints that rendering to a real
-    # console rather than a file — sessions 6.3/7.1 hit the same trap writing
-    # scratch scripts and worked around it with `PYTHONIOENCODING=utf-8`
-    # externally; a command FR-10 calls "the product" cannot depend on the
+    # console rather than a file — earlier scratch scripts hit the same trap
+    # and worked around it with `PYTHONIOENCODING=utf-8`
+    # externally; the CLI, being the product itself, cannot depend on the
     # caller having set that first. `reconfigure` is a no-op-safe best effort:
     # a stream that does not support it (a captured pipe in some environments)
     # is left alone rather than raising.
@@ -75,13 +70,13 @@ for _stream in (sys.stdout, sys.stderr):
 app = typer.Typer(add_completion=False)
 
 DEFAULT_DATA_DIR = Path("data/reference")
-"""Session 7.2's committed reference dataset — the same seed-0, 2026-08-28
-batch every prior session's checkpoint measurements already use."""
+"""The committed reference dataset — the same seed-0, 2026-08-28
+batch every prior checkpoint measurement already uses."""
 
 DEFAULT_SNAPSHOT_DATE = date(2026, 8, 28)
 """Must match the snapshot date the pointed-at batch was generated with —
 it is what the matcher's T+2 window and the family-4 no-op split are
-computed against (§3.3). A parameter, per AGENT.md's determinism rules;
+computed against. A parameter, because nothing here may read a clock;
 never `datetime.now()`."""
 
 DEFAULT_SEED = 0
@@ -94,10 +89,10 @@ class SemanticsArm(str, Enum):
     """Which implementation answers the six free-text reads (`pipeline.semantics`).
 
     Separate from `ClassifierArm` because they are different questions and the
-    §5.4 ablation wants them separable: `--classifier` chooses who assigns a
+    ablation wants them separable: `--classifier` chooses who assigns a
     case's exception subtype, `--semantics` chooses who reads the bank's prose
     underneath that — the gateway/merchant split, reversals, charges, the
-    counterparty read, and the FR-06 tax position. A run can vary either alone.
+    counterparty read, and the tax-position exclusion. A run can vary either alone.
     """
 
     KEYWORD = "keyword"
@@ -105,7 +100,7 @@ class SemanticsArm(str, Enum):
 
 
 class ClassifierArm(str, Enum):
-    """Which of §4.2's two Slot A arms classifies this run. Matches the
+    """Which of Slot A's two arms classifies this run. Matches the
     `arm` strings `pipeline.eval_report`/`pipeline.report` already use
     (`"baseline"`, `"slot_a"`) so a run's console output, report and
     `MetricsReport.provenance` never disagree about which arm produced it."""
@@ -117,9 +112,9 @@ class ClassifierArm(str, Enum):
     @property
     def arm_name(self) -> str:
         """The `arm` string `pipeline.eval_report`/`pipeline.report` expect —
-        `"slot_a"` for `LLM`, matching every existing test and BUILDLOG entry
-        (session 6.2 onward). Kept distinct from `.value` (`"llm"`) because
-        `--classifier llm` is the CLI's own, more readable flag spelling."""
+        `"slot_a"` for `LLM`, matching every existing test. Kept distinct from
+        `.value` (`"llm"`) because `--classifier llm` is the CLI's own, more
+        readable flag spelling."""
         return {
             ClassifierArm.BASELINE: "baseline",
             ClassifierArm.LLM: "slot_a",
@@ -148,7 +143,7 @@ def run_reconciliation(
     git_sha: str | None,
     semantics_arm: SemanticsArm = SemanticsArm.KEYWORD,
 ) -> tuple[EvalReport, str]:
-    """Components 2-9 end to end over `data_dir`, plus the FR-11 report HTML.
+    """Components 2-9 end to end over `data_dir`, plus the rendered report HTML.
 
     The one function both `reconcile` (the CLI command) and the clean-clone
     reproduce test call, for the same reason `pipeline.run.run_batch` is the
@@ -157,7 +152,7 @@ def run_reconciliation(
     real command.
 
     Returns the built `EvalReport` (provenance filled in) and the rendered
-    FR-11 HTML — the two artifacts `reconcile` writes to disk.
+    HTML — the two artifacts `reconcile` writes to disk.
     """
     settlements, recon_lines, bank_lines, ledger_entries, ground_truth = _load_batch(data_dir)
 
@@ -231,9 +226,9 @@ def run_reconciliation(
 
 
 def _console_summary(eval_report: EvalReport) -> str:
-    """FR-10's "console summary" half. `pipeline.eval_report.render_eval_report`
+    """The CLI's "console summary" half. `pipeline.eval_report.render_eval_report`
     already renders the confusion matrices, the per-subtype breakdown and the
-    §5.5 threshold review as plain text — this command's own job is only to
+    threshold review as plain text — this command's own job is only to
     print that, plus where the report file landed, never to recompute a figure."""
     return render_eval_report(eval_report)
 
@@ -251,25 +246,25 @@ def reconcile(
         SemanticsArm.KEYWORD.value,
         help="Who answers the six free-text reads over bank/adjustment prose "
         "(pipeline.semantics): 'keyword' (literal substrings, the default and "
-        "§5.4's baseline) or 'llm' (constrained, cached). Try 'llm' against "
+        "baseline arm) or 'llm' (constrained, cached). Try 'llm' against "
         "--data-dir data/heldout_vocab, where the keyword arm cannot complete a run.",
     ),
     classifier: ClassifierArm = typer.Option(
         ClassifierArm.BASELINE.value,
         help="Classification arm: 'baseline' (deterministic triggers + keyword read), "
         "'hybrid' (triggers win; Slot A decides only the untriggered orphan split), "
-        "or 'llm' (Slot A over all eight labels, §4.2). Default is whichever arm "
+        "or 'llm' (Slot A over all eight labels). Default is whichever arm "
         "measures best on the reference batch — see README's arm comparison.",
     ),
-    cache_path: Path = typer.Option(Path("data/llm_cache.json"), help="§4.3 SHA-keyed prompt/response cache."),
+    cache_path: Path = typer.Option(Path("data/llm_cache.json"), help="SHA-keyed prompt/response cache."),
     cache_mode: CacheMode = typer.Option(
         CacheMode.STRICT.value,
-        help="strict: cache miss is a hard error, no network (NFR-05 default). "
+        help="strict: cache miss is a hard error, no network (the offline-by-default mode). "
         "refresh: calls Fireworks on a miss and writes the cache.",
     ),
     seed: int = typer.Option(DEFAULT_SEED, help="Provenance only — the seed `data_dir` was generated with."),
     git_sha: str = typer.Option(
-        None, help="Provenance only — the git SHA of the code that produced this run (FR-13)."
+        None, help="Provenance only — the git SHA of the code that produced this run."
     ),
     out_dir: Path = typer.Option(
         Path(".run"), help="Where report.html and metrics.json are written. Gitignored by default; "
@@ -277,7 +272,7 @@ def reconcile(
     ),
 ) -> None:
     """Run components 2-9 end to end over `data_dir` and emit both a console
-    summary and `report.html` (FR-11) plus `metrics.json` (FR-13) under `out_dir`."""
+    summary and `report.html` plus `metrics.json` under `out_dir`."""
     eval_report, html = run_reconciliation(
         data_dir=data_dir,
         snapshot_date=date.fromisoformat(snapshot_date),
@@ -306,7 +301,7 @@ def metrics_json(metrics: MetricsReport) -> str:
     `sort_keys=True` (matching `pipeline.llm_cache.PromptCache._save` and
     `pipeline.report.render_report_html`'s own JSON blob) is what makes two
     runs against the same committed inputs produce byte-identical files —
-    NFR-01/NFR-06's "reproduce identical metrics on a clean clone" is a
+    "reproduce identical metrics on a clean clone" is a
     claim about these exact bytes, not about the numbers read out of them.
     """
     return json.dumps(metrics.model_dump(mode="json"), indent=2, sort_keys=True, ensure_ascii=True) + "\n"
